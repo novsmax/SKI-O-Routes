@@ -1,0 +1,40 @@
+orienteering-assistant/
+│
+├── app/
+│   ├── __init__.py
+│   ├── main.py              # Основной файл FastAPI приложения
+│   ├── models.py            # Модели данных
+│   ├── database.py          # Настройка базы данных
+│   ├── routers/
+│   │   ├── __init__.py
+│   │   ├── maps.py          # Маршруты для работы с картами
+│   │   └── admin.py         # Маршруты для административной панели
+│   │
+│   ├── services/
+│   │   ├── __init__.py
+│   │   ├── map_processor.py  # Сервис для обработки карт (будет реализован позже)
+│   │   └── file_storage.py   # Сервис для хранения файлов
+│   │
+│   └── static/
+│       ├── css/
+│       │   └── styles.css
+│       ├── js/
+│       │   └── main.js
+│       └── images/
+│           └── logo.png
+│
+├── templates/
+│   ├── index.html           # Главная страница
+│   ├── map_view.html        # Страница просмотра карты
+│   ├── library.html         # Страница библиотеки карт
+│   └── admin/
+│       └── dashboard.html   # Административная панель
+│
+├── uploads/                 # Папка для загруженных карт
+│   └── .gitkeep
+│
+├── processed/               # Папка для обработанных карт
+│   └── .gitkeep
+│
+├── requirements.txt         # Зависимости проекта
+└── README.md                # Документация проекта

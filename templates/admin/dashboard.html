@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Административная панель - Ассистент ориентирования</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/styles.css') }}">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">SKI-O Routes</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/">Главная</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/library">Библиотека карт</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/admin/dashboard">Админ-панель</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <h1>Административная панель</h1>
+        <p class="lead">Управление библиотекой карт и настройками системы</p>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5>Список карт</h5>
+            </div>
+            <div class="card-body">
+                {% if maps %}
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Превью</th>
+                                <th>Название</th>
+                                <th>Место</th>
+                                <th>Добавлено</th>
+                                <th>Статус</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for map in maps %}
+                            <tr>
+                                <td>{{ map.id }}</td>
+                                <td>
+                                    <img src="/uploads/{{ map.stored_filename }}" alt="{{ map.title }}" class="admin-thumbnail" style="max-width: 100px; max-height: 75px;">
+                                </td>
+                                <td>{{ map.title }}</td>
+                                <td>{{ map.location }}</td>
+                                <td>{{ map.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                                <td>
+                                    {% if map.is_processed %}
+                                    <span class="badge bg-success">Обработана</span>
+                                    {% else %}
+                                    <span class="badge bg-warning">Не обработана</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="btn-group" role="group">
+                                        <a href="/maps/{{ map.id }}" class="btn btn-sm btn-outline-primary" title="Просмотр">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editMapModal{{ map.id }}" title="Редактировать">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteMapModal{{ map.id }}" title="Удалить">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+
+                                    <!-- Модальное окно редактирования -->
+                                    <div class="modal fade" id="editMapModal{{ map.id }}" tabindex="-1" aria-labelledby="editMapModalLabel{{ map.id }}" aria-hidden="true">
+                                        <div class="modal-dialog">
+                                            <div class="modal-content">
+                                                <form action="/admin/maps/{{ map.id }}/update" method="post">
+                                                    <div class="modal-header">
+                                                        <h5 class="modal-title" id="editMapModalLabel{{ map.id }}">Редактирование карты</h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                    </div>
+                                                    <div class="modal-body">
+                                                        <div class="mb-3">
+                                                            <label for="title{{ map.id }}" class="form-label">Название</label>
+                                                            <input type="text" class="form-control" id="title{{ map.id }}" name="title" value="{{ map.title }}" required>
+                                                        </div>
+                                                        <div class="mb-3">
+                                                            <label for="location{{ map.id }}" class="form-label">Место проведения</label>
+                                                            <input type="text" class="form-control" id="location{{ map.id }}" name="location" value="{{ map.location }}" required>
+                                                        </div>
+                                                    </div>
+                                                    <div class="modal-footer">
+                                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                                                        <button type="submit" class="btn btn-primary">Сохранить</button>
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Модальное окно подтверждения удаления -->
+                                    <div class="modal fade" id="deleteMapModal{{ map.id }}" tabindex="-1" aria-labelledby="deleteMapModalLabel{{ map.id }}" aria-hidden="true">
+                                        <div class="modal-dialog">
+                                            <div class="modal-content">
+                                                <div class="modal-header">
+                                                    <h5 class="modal-title" id="deleteMapModalLabel{{ map.id }}">Подтверждение удаления</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <p>Вы уверены, что хотите удалить карту "{{ map.title }}"?</p>
+                                                    <p class="text-danger">Это действие нельзя отменить.</p>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                                                    <form action="/admin/maps/{{ map.id }}/delete" method="post">
+                                                        <button type="submit" class="btn btn-danger">Удалить</button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    <p class="mb-0">В базе данных пока нет карт.</p>
+                </div>
+                <a href="/" class="btn btn-primary">Добавить первую карту</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-dark text-white mt-5 py-3">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <p>&copy; 2025 Цифровой ассистент для спортивного ориентирования</p>
+                </div>
+                <div class="col-md-6 text-end">
+                    <p>Разработал М. А. Новожилов</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ map.title }} - Просмотр карты</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/styles.css') }}">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">Ассистент ориентирования</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Главная</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/library">Библиотека карт</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/admin/dashboard">Админ-панель</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>{{ map.title }}</h1>
+            <div>
+                <a href="/library" class="btn btn-outline-secondary">Вернуться в библиотеку</a>
+            </div>
+        </div>
+        <div class="card mb-4">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5>Информация о карте</h5>
+                    <div>
+                        {% if not map.is_processed %}
+                        <button id="analyzeBtn" class="btn btn-primary" onclick="analyzeMap()">Анализировать маршруты</button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Место проведения:</strong> {{ map.location }}</p>
+                        <p><strong>Загружено:</strong> {{ map.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+                        <p><strong>Исходный файл:</strong> {{ map.original_filename }}</p>
+                        <p><strong>Статус:</strong>
+                            {% if map.is_processed %}
+                            <span class="badge bg-success">Обработана</span>
+                            {% else %}
+                            <span class="badge bg-warning">Не обработана</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5>Оригинальная карта</h5>
+                    </div>
+                    <div class="card-body">
+                        <img src="{{ upload_path }}" class="img-fluid" alt="Оригинальная карта">
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5>Карта с оптимальными маршрутами</h5>
+                    </div>
+                    <div class="card-body" id="processedMapContainer">
+                        {% if map.is_processed and processed_path %}
+                        <img src="{{ processed_path }}" class="img-fluid" alt="Обработанная карта">
+                        {% else %}
+                        <div class="text-center py-5">
+                            <p class="text-muted">Карта еще не обработана. Нажмите "Анализировать маршруты", чтобы начать обработку.</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-dark text-white mt-5 py-3">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <p>&copy; 2025 Цифровой ассистент спортивного ориентирования</p>
+                </div>
+                <div class="col-md-6 text-end">
+                    <p>Разработано М. А. Новожиловым</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        async function analyzeMap() {
+            // Деактивируем кнопку и показываем процесс загрузки
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            analyzeBtn.disabled = true;
+            analyzeBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Анализируем...';
+
+            try {
+                // Отправляем запрос на анализ карты
+                const response = await fetch('/maps/{{ map.id }}/analyze', {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Обновляем контейнер с обработанной картой
+                    const processedMapContainer = document.getElementById('processedMapContainer');
+                    processedMapContainer.innerHTML = `<img src="${data.processed_path}" class="img-fluid" alt="Обработанная карта">`;
+
+                    // Обновляем UI
+                    analyzeBtn.classList.add('d-none');
+
+                    // Перезагружаем страницу для обновления статуса
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    alert('Произошла ошибка при анализе карты');
+                    analyzeBtn.disabled = false;
+                    analyzeBtn.innerHTML = 'Анализировать маршруты';
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                alert('Произошла ошибка при анализе карты');
+                analyzeBtn.disabled = false;
+                analyzeBtn.innerHTML = 'Анализировать маршруты';
+            }
+        }
+    </script>
+</body>
+</html>

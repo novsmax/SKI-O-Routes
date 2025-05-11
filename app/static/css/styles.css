@@ -1,0 +1,60 @@
+/* Общие стили */
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.navbar-brand {
+    font-weight: bold;
+}
+
+footer {
+    margin-top: auto;
+}
+
+/* Стили для страницы загрузки карты */
+.card {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    transition: box-shadow 0.3s;
+}
+
+.card:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+/* Стили для просмотра карты */
+.img-fluid {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.25rem;
+}
+
+/* Стили для библиотеки карт */
+.thumbnail {
+    max-height: 200px;
+    object-fit: cover;
+    width: 100%;
+}
+
+/* Стили для административной панели */
+.admin-thumbnail {
+    object-fit: cover;
+    border-radius: 0.25rem;
+}
+
+.table-responsive {
+    overflow-x: auto;
+}
+
+.badge {
+    font-size: 0.75rem;
+    padding: 0.35em 0.65em;
+}
+
+/* Адаптивные стили */
+@media (max-width: 768px) {
+    .thumbnail {
+        max-height: 150px;
+    }
+}
