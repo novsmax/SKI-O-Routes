@@ -1,6 +1,3 @@
-/**
- * Основной JavaScript файл для цифрового ассистента спортивного ориентирования
- */
 
 document.addEventListener('DOMContentLoaded', function() {
     // Инициализация всплывающих подсказок

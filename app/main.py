@@ -13,6 +13,7 @@ import os
 from app.database import get_db, init_db
 from app.routers import maps, admin
 
+os.makedirs("templates/includes", exist_ok=True)
 app = FastAPI(title="Цифровой ассистент спортивного ориентирования")
 
 # Настройка CORS
