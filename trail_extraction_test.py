@@ -12,19 +12,19 @@ import os
 # ==== НАСТРОЙКИ (РЕДАКТИРОВАТЬ ЗДЕСЬ) ====
 
 # Путь к изображению карты
-IMAGE_PATH = "3FHqyr7_w7w.jpg"
+IMAGE_PATH = "YEyQ1MkbKcY.jpg"
 
 # Базовая директория для сохранения результатов
 BASE_SAVE_DIR = "test_results"
 
 # Оптимизированные параметры HSV для light_green
 HSV_PARAMS = {
-    "h_min": 35,
-    "h_max": 85,
+    "h_min": 55,
+    "h_max": 70,
     "s_min": 50,
     "s_max": 255,
     "v_min": 50,
-    "v_max": 235
+    "v_max": 215
 }
 
 # Параметры определения перекрестков
@@ -60,14 +60,16 @@ def load_image(image_path):
     return img  # Возвращаем в BGR формате, так как OpenCV использует BGR
 
 
-def extract_mask(image, lower_hsv, upper_hsv):
+def extract_mask(image, lower_hsv, upper_hsv, max_area_ratio=0.1):
     """
-    Выделение лыжней с помощью цветовой фильтрации.
+    Выделение лыжней с помощью цветовой фильтрации с игнорированием больших областей.
 
     Параметры:
     - image: Исходное изображение (BGR формат из OpenCV)
     - lower_hsv: Нижняя граница диапазона HSV [h, s, v]
     - upper_hsv: Верхняя граница диапазона HSV [h, s, v]
+    - max_area_ratio: Максимальное отношение площади связной области к общей площади карты
+                      (области больше этого значения будут считаться не лыжнями)
 
     Возвращает:
     - mask: Бинарная маска с выделенными лыжнями
@@ -78,12 +80,29 @@ def extract_mask(image, lower_hsv, upper_hsv):
     # Создание маски цвета
     mask = cv2.inRange(hsv, np.array(lower_hsv), np.array(upper_hsv))
 
+    # Находим связные компоненты
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
+
+    # Вычисляем общую площадь изображения
+    total_area = image.shape[0] * image.shape[1]
+
+    # Создаем новую маску, исключая слишком большие области
+    filtered_mask = np.zeros_like(mask)
+
+    # Пропускаем фоновую компоненту (индекс 0)
+    for i in range(1, num_labels):
+        area = stats[i, cv2.CC_STAT_AREA]
+
+        # Если площадь меньше max_area_ratio от общей площади, добавляем в маску
+        if area / total_area < max_area_ratio:
+            filtered_mask[labels == i] = 255
+
     # Применение морфологических операций для улучшения результата
     kernel = np.ones((3, 3), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+    filtered_mask = cv2.morphologyEx(filtered_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+    filtered_mask = cv2.morphologyEx(filtered_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
 
-    return mask
+    return filtered_mask
 
 
 def skeletonize_mask(mask):
@@ -263,15 +282,17 @@ def find_junction_points_improved(skeleton, min_distance=10, cleanup_branches=Tr
     return junction_coords
 
 
-def process_image(image_path, hsv_params, base_dir="test_results", show_steps=False):
+def process_map_with_dashed_lines(image_path, hsv_params, base_dir="test_results", show_steps=False, alpha=0.7):
     """
-    Обработка изображения для выделения лыжней и нахождения перекрестков.
+    Обработка карты с выделением всех лыжней одинаковыми тонкими линиями,
+    включая достраивание пунктирных линий.
 
     Параметры:
     - image_path: Путь к изображению карты
     - hsv_params: Словарь с параметрами HSV
     - base_dir: Базовая директория для сохранения результатов
     - show_steps: Показывать ли промежуточные шаги обработки
+    - alpha: Уровень непрозрачности маски (0-1)
     """
     # Получаем директорию для сохранения результатов
     save_dir = get_save_dir(image_path, base_dir)
@@ -283,52 +304,121 @@ def process_image(image_path, hsv_params, base_dir="test_results", show_steps=Fa
     lower_hsv = [hsv_params["h_min"], hsv_params["s_min"], hsv_params["v_min"]]
     upper_hsv = [hsv_params["h_max"], hsv_params["s_max"], hsv_params["v_max"]]
 
-    print(f"Обработка изображения: {os.path.basename(image_path)}")
-    print("Использование параметров light_green для HSV:")
-    print(f"Lower HSV: {lower_hsv}")
-    print(f"Upper HSV: {upper_hsv}")
+    # Выделение зеленых лыжней (исключая синие области)
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-    # Шаг 1: Выделение лыжней по цвету (получаем только маску)
-    mask = extract_mask(image, lower_hsv, upper_hsv)
+    # Создание маски для зеленого цвета (лыжни)
+    green_mask = cv2.inRange(hsv, np.array(lower_hsv), np.array(upper_hsv))
 
-    # Шаг 2: Скелетизация маски
-    skeleton = skeletonize_mask(mask)
+    # Создание маски для синего/голубого цвета и исключение их
+    blue_lower = np.array([90, 50, 50])
+    blue_upper = np.array([130, 255, 255])
+    blue_mask = cv2.inRange(hsv, blue_lower, blue_upper)
 
-    # Шаг 3: Находим перекрестки (используем улучшенную функцию)
-    junctions = find_junction_points_improved(skeleton, min_distance=MIN_JUNCTION_DISTANCE, cleanup_branches=True)
+    # Исключаем синие области из зеленой маски
+    initial_mask = green_mask.copy()
+    initial_mask[blue_mask > 0] = 0
+
+    # Фильтрация по размеру компонентов
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(initial_mask, connectivity=8)
+
+    # Вычисляем общую площадь изображения
+    total_area = image.shape[0] * image.shape[1]
+
+    # Создаем новую маску, исключая слишком большие области
+    mask = np.zeros_like(initial_mask)
+
+    # Пропускаем фоновую компоненту (индекс 0)
+    for i in range(1, num_labels):
+        area = stats[i, cv2.CC_STAT_AREA]
+
+        # Если площадь меньше max_area_ratio от общей площади, добавляем в маску
+        if area / total_area < 0.05:  # max_area_ratio = 0.05
+            mask[labels == i] = 255
+
+    # Разделяем сплошные и пунктирные линии для обработки
+    # 1. Создаем копию маски для дальнейшей обработки
+    solid_lines_mask = mask.copy()
+
+    # 2. Применяем морфологические операции для разделения типов линий
+    kernel_small = np.ones((3, 3), np.uint8)
+    kernel_medium = np.ones((5, 5), np.uint8)
+    kernel_large = np.ones((7, 7), np.uint8)
+
+    # Сначала очищаем маску от мелких шумов
+    solid_lines_mask = cv2.morphologyEx(solid_lines_mask, cv2.MORPH_OPEN, kernel_small)
+
+    # 3. Идентифицируем непрерывные линии (сохранятся после открытия большим ядром)
+    solid_lines = cv2.morphologyEx(solid_lines_mask, cv2.MORPH_OPEN, kernel_large)
+
+    # 4. Идентифицируем пунктирные линии
+    dashed_lines = cv2.subtract(mask, solid_lines)
+
+    # 5. Достраиваем пунктирные линии, соединяя близкие точки
+    dashed_connected = cv2.dilate(dashed_lines, kernel_medium, iterations=2)
+    dashed_connected = cv2.erode(dashed_connected, kernel_small, iterations=1)
+
+    # 6. Скелетизируем пунктирные линии
+    dashed_skeleton = skeletonize_mask(dashed_connected)
+
+    # 7. Объединяем все линии в одну маску
+    all_lines = cv2.bitwise_or(solid_lines, dashed_skeleton)
+
+    # 8. Скелетизируем все линии для получения тонких линий одинаковой толщины
+    final_skeleton = skeletonize_mask(all_lines)
+
+    # 9. Создаем RGB изображение для визуализации
+    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    overlay = rgb_image.copy()
+
+    # 10. Создаем полупрозрачное наложение для линий
+    lines_overlay = np.zeros_like(rgb_image)
+
+    # Все линии одинаково зеленые
+    lines_overlay[final_skeleton > 0] = [0, 255, 0]  # Зеленый
+
+    # 11. Смешиваем изображения с учетом прозрачности
+    overlay = cv2.addWeighted(overlay, 1 - alpha, lines_overlay, alpha, 0)
+
+    # 12. Находим перекрестки на основе полного скелета
+    junctions = find_junction_points_improved(final_skeleton, min_distance=MIN_JUNCTION_DISTANCE, cleanup_branches=True)
 
     print(f"Найдено {len(junctions)} перекрестков")
 
-    # Создаем изображение с наложенным скелетом и перекрестками для визуализации
-    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Конвертируем для matplotlib
-    overlay = rgb_image.copy()
-
-    # Накладываем скелет на исходное изображение
-    overlay[skeleton > 0] = [255, 0, 0]  # Красный цвет для лыжней
-
-    # Накладываем перекрестки с уменьшенным радиусом
+    # 13. Накладываем перекрестки
     for y, x in junctions:
-        cv2.circle(overlay, (x, y), JUNCTION_CIRCLE_RADIUS, [0, 0, 255], -1)  # Синий цвет для перекрестков
+        cv2.circle(overlay, (x, y), JUNCTION_CIRCLE_RADIUS, [255, 255, 0], -1)  # Желтый цвет для перекрестков
 
     # Отображаем результаты, если требуется
     if show_steps:
-        plt.figure(figsize=(15, 10))
-        plt.subplot(2, 2, 1)
+        plt.figure(figsize=(15, 12))
+
+        plt.subplot(3, 2, 1)
         plt.title('Исходное изображение')
         plt.imshow(rgb_image)
         plt.axis('off')
 
-        plt.subplot(2, 2, 2)
-        plt.title('Маска лыжней')
+        plt.subplot(3, 2, 2)
+        plt.title('Исходная маска')
         plt.imshow(mask, cmap='gray')
         plt.axis('off')
 
-        plt.subplot(2, 2, 3)
-        plt.title('Скелет лыжней')
-        plt.imshow(skeleton, cmap='gray')
+        plt.subplot(3, 2, 3)
+        plt.title('Сплошные линии')
+        plt.imshow(solid_lines, cmap='gray')
         plt.axis('off')
 
-        plt.subplot(2, 2, 4)
+        plt.subplot(3, 2, 4)
+        plt.title('Пунктирные линии (достроенные)')
+        plt.imshow(dashed_skeleton, cmap='gray')
+        plt.axis('off')
+
+        plt.subplot(3, 2, 5)
+        plt.title('Общий скелет линий')
+        plt.imshow(final_skeleton, cmap='gray')
+        plt.axis('off')
+
+        plt.subplot(3, 2, 6)
         plt.title(f'Итоговый результат ({len(junctions)} перекрестков)')
         plt.imshow(overlay)
         plt.axis('off')
@@ -337,17 +427,14 @@ def process_image(image_path, hsv_params, base_dir="test_results", show_steps=Fa
         plt.show()
 
     # Сохраняем результаты
-    cv2.imwrite(os.path.join(save_dir, "mask.png"), mask)
-    cv2.imwrite(os.path.join(save_dir, "skeleton.png"), skeleton)
-
-    # Сохраняем наложение для визуализации (в BGR для OpenCV)
+    cv2.imwrite(os.path.join(save_dir, "all_lines_skeleton.png"), final_skeleton)
     cv2.imwrite(
-        os.path.join(save_dir, "result.png"),
+        os.path.join(save_dir, "result_uniform_lines.png"),
         cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR)
     )
 
-    print(f"Маски сохранены в: {save_dir}")
-    return mask, skeleton, junctions
+    print(f"Результаты сохранены в: {save_dir}")
+    return mask, final_skeleton, junctions
 
 
 if __name__ == "__main__":
@@ -360,5 +447,5 @@ if __name__ == "__main__":
     if not os.path.exists(BASE_SAVE_DIR):
         os.makedirs(BASE_SAVE_DIR)
 
-    # Обработка изображения с оптимальными параметрами light_green
-    mask, skeleton, junctions = process_image(IMAGE_PATH, HSV_PARAMS, BASE_SAVE_DIR, SHOW_STEPS)
+    # Обработка изображения с выделением типов линий
+    mask, skeleton, junctions = process_map_with_dashed_lines(IMAGE_PATH, HSV_PARAMS, BASE_SAVE_DIR, True)
