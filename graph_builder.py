@@ -2,8 +2,8 @@
 graph_builder.py - Модуль для построения графовой модели лыжней и поиска оптимальных маршрутов.
 
 Этот модуль отвечает за преобразование скелетизированных лыжней и обнаруженных перекрестков
-в графовую модель, расчет весов рёбер (с учетом типа лыжни и рельефа), поиск оптимальных
-маршрутов между контрольными пунктами и визуализацию результатов.
+в графовую модель, расчет весов рёбер, поиск оптимальных маршрутов между контрольными пунктами
+и визуализацию результатов.
 """
 
 import os
@@ -19,18 +19,27 @@ from trail_analyzer import process_map_with_dashed_lines
 
 
 def build_graph_from_skeleton(
-        skeleton_image: np.ndarray,
-        junctions: np.ndarray,
-        scale_factor: float = 1.0,
-        hsv_image: Optional[np.ndarray] = None
+    skeleton_image: np.ndarray,
+    junctions: np.ndarray,
+    scale_factor: float = 1.0,
+    hsv_image: Optional[np.ndarray] = None
 ) -> nx.Graph:
     """
-    Улучшенная версия построения графа
-    """
-    print(f"Построение графа из {len(junctions)} перекрестков...")
+    Построение графа из скелетизированного изображения лыжней и координат перекрестков
+    Упрощенная версия - без определения типа лыжни и учета рельефа
 
-    # Локальный импорт на случай проблем
+    Args:
+        skeleton_image: Бинарное изображение скелетизированных лыжней (значения 255 для лыжней)
+        junctions: Массив координат перекрестков [[y1, x1], [y2, x2], ...]
+        scale_factor: Коэффициент масштаба (метров на пиксель)
+        hsv_image: Не используется, оставлен для совместимости
+
+    Returns:
+        G: Граф, представляющий сеть лыжней
+    """
     import networkx as nx
+
+    print(f"Построение графа из {len(junctions)} перекрестков...")
 
     # 1. Создаем граф
     G = nx.Graph()
@@ -124,19 +133,8 @@ def build_graph_from_skeleton(
             segment_length_pixels = len(current_segment)
             segment_length_meters = segment_length_pixels * scale_factor
 
-            # Определяем тип лыжни (если доступно HSV-изображение)
-            trail_type = 'normal'
-            speed_factor = 1.0
-
-            if hsv_image is not None:
-                segment_y = [p[0] for p in current_segment]
-                segment_x = [p[1] for p in current_segment]
-                trail_type, speed_factor = get_trail_type(
-                    np.array(segment_y), np.array(segment_x), hsv_image
-                )
-
-            # Рассчитываем итоговый вес
-            weight = calculate_final_weight(segment_length_meters, speed_factor)
+            # Рассчитываем итоговый вес (просто время по расстоянию)
+            weight = calculate_final_weight(segment_length_meters)
 
             # Добавляем ребро
             G.add_edge(
@@ -145,8 +143,8 @@ def build_graph_from_skeleton(
                 weight=weight,
                 length_meters=segment_length_meters,
                 length_pixels=segment_length_pixels,
-                trail_type=trail_type,
-                speed_factor=speed_factor,
+                trail_type='normal',
+                speed_factor=1.0,
                 coords_y=np.array([p[0] for p in current_segment]),
                 coords_x=np.array([p[1] for p in current_segment])
             )
@@ -157,21 +155,78 @@ def build_graph_from_skeleton(
     return G
 
 
-def get_trail_type(y_coords, x_coords, hsv_image=None):
+def get_trail_type(
+    y_coords: np.ndarray,
+    x_coords: np.ndarray,
+    hsv_image: Optional[np.ndarray] = None
+) -> Tuple[str, float]:
+    """
+    Упрощенная версия функции, без определения типа лыжни
+
+    Args:
+        y_coords: массив Y-координат пикселей сегмента
+        x_coords: массив X-координат пикселей сегмента
+        hsv_image: HSV-изображение карты (не используется)
+
+    Returns:
+        тип лыжни ('normal') и коэффициент скорости (1.0)
+    """
     # Всегда возвращаем стандартный тип и коэффициент
     return 'normal', 1.0
 
 
-def calculate_final_weight(length_meters, trail_type_factor=1.0):
-    """Упрощенная версия расчета веса ребра"""
+def calculate_final_weight(
+    length_meters: float,
+    trail_type_factor: float = 1.0
+) -> float:
+    """
+    Упрощенная версия расчета веса ребра, без учета типа лыжни и рельефа
+
+    Args:
+        length_meters: длина сегмента в метрах
+        trail_type_factor: не используется, оставлен для совместимости
+
+    Returns:
+        вес ребра (время в секундах)
+    """
     # Базовое время в секундах (скорость 5 м/с)
     return length_meters / 5.0
 
 
+def remove_disconnected_vertices(G: nx.Graph) -> nx.Graph:
+    """
+    Удаляет все вершины, которые не связаны с самой большой компонентой связности графа
+
+    Args:
+        G: Исходный граф
+
+    Returns:
+        Граф, содержащий только самую большую компоненту связности
+    """
+    # Находим все компоненты связности
+    components = list(nx.connected_components(G))
+
+    if not components:
+        print("Граф не содержит компонент связности")
+        return G
+
+    # Находим самую большую компоненту
+    largest_component = max(components, key=len)
+
+    # Создаем подграф только с вершинами из самой большой компоненты
+    largest_subgraph = G.subgraph(largest_component).copy()
+
+    print(f"Исходный граф: {G.number_of_nodes()} вершин, {G.number_of_edges()} рёбер")
+    print(f"Самая большая компонента: {largest_subgraph.number_of_nodes()} вершин, {largest_subgraph.number_of_edges()} рёбер")
+    print(f"Удалено {G.number_of_nodes() - largest_subgraph.number_of_nodes()} изолированных вершин")
+
+    return largest_subgraph
+
+
 def find_optimal_route(
-        G: nx.Graph,
-        start_node: int,
-        end_node: int
+    G: nx.Graph,
+    start_node: int,
+    end_node: int
 ) -> Tuple[Optional[List[int]], float]:
     """
     Находит оптимальный маршрут между двумя перекрестками
@@ -199,8 +254,8 @@ def find_optimal_route(
 
 
 def find_optimal_route_multiple_kps(
-        G: nx.Graph,
-        control_points: List[int]
+    G: nx.Graph,
+    control_points: List[int]
 ) -> Tuple[Optional[List[int]], float]:
     """
     Находит оптимальный маршрут через несколько контрольных пунктов
@@ -251,7 +306,8 @@ def visualize_route(
         show: bool = True
 ) -> np.ndarray:
     """
-    Визуализирует найденный маршрут на карте
+    Визуализирует найденный маршрут на карте.
+    Отображает только перекрестки и участки пути оптимального маршрута.
 
     Args:
         original_image: исходное изображение карты
@@ -266,65 +322,77 @@ def visualize_route(
     """
     result = original_image.copy()
 
-    # Рисуем все перекрестки
-    for i, (y, x) in enumerate(junctions):
-        # Обычные перекрестки - синие кружки
-        color = (255, 0, 0)  # BGR - синий
-        radius = 5
+    # Создаем словарь для быстрого доступа к координатам перекрестков
+    junction_coords = {}
+    for i in range(len(junctions)):
+        junction_coords[i] = (junctions[i][0], junctions[i][1])
 
-        # Перекрестки на пути - красные кружки
-        if i in path:
-            color = (0, 0, 255)  # BGR - красный
-            radius = 7
+    # Рисуем только перекрестки, которые входят в путь
+    if path:
+        for i, node in enumerate(path):
+            if node in junction_coords:
+                y, x = junction_coords[node]
 
-        # Начальная и конечная точки - зеленые кружки
-        if i == path[0] or i == path[-1]:
-            color = (0, 255, 0)  # BGR - зеленый
-            radius = 9
+                # Перекрестки на пути - красные кружки
+                color = (0, 0, 255)  # BGR - красный
+                radius = 7
 
-            # Добавляем номер контрольного пункта
-            label = "Start" if i == path[0] else "Finish"
-            cv2.putText(
-                result,
-                label,
-                (x + 10, y),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                color,
-                2
-            )
+                # Начальная точка - зеленая
+                if i == 0:
+                    color = (0, 255, 0)  # BGR - зеленый
+                    radius = 12
 
-        cv2.circle(result, (x, y), radius, color, -1)
+                    # Добавляем метку "Start" большим шрифтом
+                    cv2.putText(
+                        result,
+                        "Start",
+                        (x + 10, y),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1.0,  # Увеличенный размер шрифта
+                        color,
+                        3  # Более толстые линии
+                    )
 
-    # Рисуем маршрут
-    for i in range(len(path) - 1):
-        node1, node2 = path[i], path[i + 1]
+                # Конечная точка - синяя
+                elif i == len(path) - 1:
+                    color = (255, 0, 0)  # BGR - синий
+                    radius = 12
 
-        # Получаем координаты сегмента
-        if G.has_edge(node1, node2):
-            # Получаем коэффициент скорости для определения цвета
-            speed_factor = G[node1][node2].get('speed_factor', 1.0)
+                    # Добавляем метку "Finish" большим шрифтом
+                    cv2.putText(
+                        result,
+                        "Finish",
+                        (x + 10, y),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1.0,  # Увеличенный размер шрифта
+                        color,
+                        3  # Более толстые линии
+                    )
 
-            # Выбираем цвет в зависимости от типа лыжни
-            if speed_factor < 1.0:  # Быстрая лыжня
-                line_color = (255, 0, 0)  # BGR - синий
-                thickness = 3
-            elif speed_factor > 1.0:  # Медленная лыжня
-                line_color = (0, 0, 255)  # BGR - красный
-                thickness = 2
-            else:  # Обычная лыжня
-                line_color = (255, 0, 255)  # BGR - пурпурный
-                thickness = 2
+                cv2.circle(result, (x, y), radius, color, -1)
 
-            # Получаем координаты
-            coords_y = G[node1][node2]['coords_y']
-            coords_x = G[node1][node2]['coords_x']
+        # Рисуем маршрут
+        for i in range(len(path) - 1):
+            node1, node2 = path[i], path[i + 1]
 
-            # Рисуем линию маршрута
-            for j in range(len(coords_y) - 1):
-                pt1 = (coords_x[j], coords_y[j])
-                pt2 = (coords_x[j + 1], coords_y[j + 1])
-                cv2.line(result, pt1, pt2, line_color, thickness)
+            if node1 in junction_coords and node2 in junction_coords:
+                # Проверяем, есть ли ребро между этими вершинами
+                if G.has_edge(node1, node2):
+                    # Если есть точные координаты сегмента, используем их
+                    if 'coords_y' in G[node1][node2] and 'coords_x' in G[node1][node2]:
+                        coords_y = G[node1][node2]['coords_y']
+                        coords_x = G[node1][node2]['coords_x']
+
+                        # Рисуем линию маршрута по точным координатам
+                        for j in range(len(coords_y) - 1):
+                            pt1 = (coords_x[j], coords_y[j])
+                            pt2 = (coords_x[j + 1], coords_y[j + 1])
+                            cv2.line(result, pt1, pt2, (0, 0, 255), 3)
+                    else:
+                        # Если точных координат нет, рисуем прямую линию
+                        y1, x1 = junction_coords[node1]
+                        y2, x2 = junction_coords[node2]
+                        cv2.line(result, (x1, y1), (x2, y2), (0, 0, 255), 3)
 
     # Сохраняем результат, если указан путь
     if save_path:
@@ -343,10 +411,10 @@ def visualize_route(
 
 
 def visualize_graph(
-        G: nx.Graph,
-        junctions: np.ndarray,
-        save_path: Optional[str] = None,
-        show: bool = True
+    G: nx.Graph,
+    junctions: np.ndarray,
+    save_path: Optional[str] = None,
+    show: bool = True
 ) -> None:
     """
     Визуализирует построенный граф с использованием networkx
@@ -361,33 +429,20 @@ def visualize_graph(
 
     # Создаем словарь позиций вершин
     pos = {}
-    for i, (y, x) in enumerate(junctions):
-        pos[i] = (x, -y)  # Инвертируем y для правильной ориентации
+    for i in G.nodes():
+        if i < len(junctions):
+            y, x = junctions[i]
+            pos[i] = (x, -y)  # Инвертируем y для правильной ориентации
 
     # Рисуем граф
     nx.draw_networkx_nodes(G, pos, node_size=100, node_color='blue')
 
-    # Рисуем ребра с разными цветами в зависимости от типа лыжни
-    edge_colors = []
-    edge_widths = []
-
-    for u, v, data in G.edges(data=True):
-        speed_factor = data.get('speed_factor', 1.0)
-
-        if speed_factor < 1.0:  # Быстрая лыжня
-            edge_colors.append('blue')
-            edge_widths.append(2.0)
-        elif speed_factor > 1.0:  # Медленная лыжня
-            edge_colors.append('red')
-            edge_widths.append(1.0)
-        else:  # Обычная лыжня
-            edge_colors.append('green')
-            edge_widths.append(1.5)
-
-    nx.draw_networkx_edges(G, pos, width=edge_widths, edge_color=edge_colors)
+    # Рисуем ребра
+    nx.draw_networkx_edges(G, pos, width=1.5, edge_color='blue')
 
     # Добавляем метки вершин
-    nx.draw_networkx_labels(G, pos, font_size=8)
+    if len(G) <= 50:  # Показываем метки только если вершин не слишком много
+        nx.draw_networkx_labels(G, pos, font_size=8)
 
     plt.title('Графовая модель лыжней')
     plt.axis('off')
@@ -403,11 +458,11 @@ def visualize_graph(
 
 
 def process_map_and_build_graph(
-        skeleton_path: str,
-        junctions_path: str,
-        original_image_path: str,
-        scale_factor: float = 1.0,
-        output_dir: Optional[str] = None
+    skeleton_path: str,
+    junctions_path: str,
+    original_image_path: str,
+    scale_factor: float = 1.0,
+    output_dir: Optional[str] = None
 ) -> nx.Graph:
     """
     Загружает данные, строит графовую модель и визуализирует результаты
@@ -434,11 +489,11 @@ def process_map_and_build_graph(
     if skeleton is None or original_image is None:
         raise FileNotFoundError("Не удалось загрузить файлы")
 
-    # Получаем HSV-изображение для определения типа лыжни
-    hsv_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2HSV)
-
     # Строим граф
-    G = build_graph_from_skeleton(skeleton, junctions, scale_factor, hsv_image)
+    G = build_graph_from_skeleton(skeleton, junctions, scale_factor)
+
+    # Удаляем несвязанные вершины
+    G = remove_disconnected_vertices(G)
 
     # Визуализируем граф
     if output_dir:
@@ -453,11 +508,11 @@ def process_map_and_build_graph(
 
 
 def process_original_map(
-        original_image_path: str,
-        scale_factor: float = 1.0,
-        hsv_params: Optional[Dict] = None,
-        base_dir: str = "results",
-        show_steps: bool = False
+    original_image_path: str,
+    scale_factor: float = 1.0,
+    hsv_params: Optional[Dict] = None,
+    base_dir: str = "results",
+    show_steps: bool = False
 ) -> Tuple[nx.Graph, np.ndarray]:
     """
     Полный процесс обработки карты: от исходного изображения до графовой модели
@@ -496,19 +551,16 @@ def process_original_map(
     base_name = os.path.splitext(filename)[0]
     save_dir = os.path.join(base_dir, base_name)
 
-    # Пути к файлам с результатами
-    skeleton_path = os.path.join(save_dir, "all_lines_skeleton.png")
-
-    # 2. Загружаем исходное изображение для определения типа лыжни
-    original_image = cv2.imread(original_image_path)
-    hsv_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2HSV)
-
-    # 3. Построение графовой модели
+    # 2. Построение графовой модели
     print("Шаг 2: Построение графовой модели...")
-    G = build_graph_from_skeleton(skeleton, junctions, scale_factor, hsv_image)
+    G = build_graph_from_skeleton(skeleton, junctions, scale_factor)
+
+    # 3. Удаление несвязанных вершин
+    print("Шаг 3: Удаление несвязанных вершин...")
+    G = remove_disconnected_vertices(G)
 
     # 4. Визуализация графа
-    print("Шаг 3: Визуализация графа...")
+    print("Шаг 4: Визуализация графа...")
     visualize_graph(
         G,
         junctions,
