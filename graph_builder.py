@@ -11,10 +11,7 @@ import numpy as np
 import networkx as nx
 import cv2
 import matplotlib.pyplot as plt
-from scipy.ndimage import label as scipy_label
 from typing import List, Tuple, Dict, Optional, Any
-
-# Импортируем функцию из trail_analyzer
 from trail_analyzer import process_map_with_dashed_lines
 
 

@@ -10,14 +10,7 @@ from skimage import morphology
 import os
 from sklearn.cluster import DBSCAN
 
-# ==== НАСТРОЙКИ (РЕДАКТИРОВАТЬ ЗДЕСЬ) ====
-
-# Путь к изображению карты
-IMAGE_PATH = "3з"
-
-# Базовая директория для сохранения результатов
-BASE_SAVE_DIR = "test_results"
-
+# ==== НАСТРОЙКИ ====
 # Оптимизированные параметры HSV для light_green (лыжни)
 HSV_PARAMS = {
     "h_min": 55,
@@ -38,8 +31,6 @@ SHOW_STEPS = True
 
 # Прозрачность наложения для визуализации
 OVERLAY_ALPHA = 0.7
-
-# ==== КОНЕЦ НАСТРОЕК ====
 
 
 def get_save_dir(image_path, base_dir="test_results"):
@@ -446,18 +437,3 @@ def process_map_with_dashed_lines(image_path, hsv_params, base_dir="test_results
     print(f"Результаты сохранены в: {save_dir}")
     return mask, final_skeleton, junctions
 
-
-if __name__ == "__main__":
-    # Проверяем, существует ли файл
-    if not os.path.exists(IMAGE_PATH):
-        print(f"Файл не найден: {IMAGE_PATH}")
-        exit(1)
-
-    # Создаем базовую директорию для результатов, если она не существует
-    if not os.path.exists(BASE_SAVE_DIR):
-        os.makedirs(BASE_SAVE_DIR)
-
-    # Обработка изображения с выделением типов линий
-    mask, skeleton, junctions = process_map_with_dashed_lines(
-        IMAGE_PATH, HSV_PARAMS, BASE_SAVE_DIR, SHOW_STEPS, OVERLAY_ALPHA
-    )

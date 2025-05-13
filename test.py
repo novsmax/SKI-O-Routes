@@ -3,7 +3,7 @@ import numpy as np
 from graph_builder import process_original_map, find_optimal_route, visualize_route
 
 # Укажите РЕАЛЬНЫЙ путь к вашему изображению
-IMAGE_PATH = "vetlyzh.jpeg"  # Измените на ваш реальный путь
+IMAGE_PATH = "YEyQ1MkbKcY.jpg"  # Измените на ваш реальный путь
 
 # Обработка исходного изображения и построение графа
 G, junctions = process_original_map(
@@ -19,8 +19,8 @@ if G.number_of_edges() > 0:
     # Использовать существующие номера вершин
     nodes = list(G.nodes())
     if len(nodes) >= 2:
-        start_node = nodes[1]
-        end_node = nodes[314]
+        start_node = nodes[50]
+        end_node = nodes[200]
 
         print(f"Поиск маршрута между перекрестками {start_node} и {end_node}")
         path, length = find_optimal_route(G, start_node, end_node)
