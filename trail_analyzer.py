@@ -13,7 +13,7 @@ from sklearn.cluster import DBSCAN
 # ==== НАСТРОЙКИ (РЕДАКТИРОВАТЬ ЗДЕСЬ) ====
 
 # Путь к изображению карты
-IMAGE_PATH = "photo_2025-03-11_08-53-13.jpg"
+IMAGE_PATH = "3з"
 
 # Базовая директория для сохранения результатов
 BASE_SAVE_DIR = "test_results"
