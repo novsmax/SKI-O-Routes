@@ -1,6 +1,6 @@
 """
-trail_extraction_test.py - Упрощенная версия скрипта для выделения лыжней из карт.
-Фокус только на получении бинарной маски и скелетизации с точным выделением перекрестков.
+trail_extraction_test.py - Скрипт для выделения лыжней и контрольных пунктов (КП) из карт.
+Реализует выделение лыжных трасс и обнаружение КП с последующим совмещением результатов.
 """
 
 import cv2
@@ -8,16 +8,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 from skimage import morphology
 import os
+from sklearn.cluster import DBSCAN
 
 # ==== НАСТРОЙКИ (РЕДАКТИРОВАТЬ ЗДЕСЬ) ====
 
 # Путь к изображению карты
-IMAGE_PATH = "YEyQ1MkbKcY.jpg"
+IMAGE_PATH = "photo_2025-03-11_08-53-13.jpg"
 
 # Базовая директория для сохранения результатов
 BASE_SAVE_DIR = "test_results"
 
-# Оптимизированные параметры HSV для light_green
+# Оптимизированные параметры HSV для light_green (лыжни)
 HSV_PARAMS = {
     "h_min": 55,
     "h_max": 70,
@@ -30,12 +31,20 @@ HSV_PARAMS = {
 # Параметры определения перекрестков
 MIN_JUNCTION_DISTANCE = 10     # Минимальное расстояние между перекрестками
 MIN_BRANCH_LENGTH = 5          # Минимальная длина ветви для сохранения
+JUNCTION_CIRCLE_RADIUS = 3     # Радиус кругов для отображения перекрестков
 
-# Параметры визуализации
-JUNCTION_CIRCLE_RADIUS = 3    # Радиус кругов для отображения перекрестков (уменьшен)
+# Параметры для обнаружения контрольных пунктов
+CP_MIN_RADIUS = 12            # Оптимальный радиус для КП на этой карте
+CP_MAX_RADIUS = 22            # Максимальный радиус КП
+CP_SENSITIVITY = 12           # Баланс между чувствительностью и точностью
+CP_CIRCLE_RADIUS = 3          # Радиус для отображения центров КП
+CP_CIRCLE_COLOR = [255, 0, 0] # Красный цвет для отображения КП
 
 # Показывать ли промежуточные шаги обработки
-SHOW_STEPS = False
+SHOW_STEPS = True
+
+# Прозрачность наложения для визуализации
+OVERLAY_ALPHA = 0.7
 
 # ==== КОНЕЦ НАСТРОЕК ====
 
@@ -69,7 +78,6 @@ def extract_mask(image, lower_hsv, upper_hsv, max_area_ratio=0.1):
     - lower_hsv: Нижняя граница диапазона HSV [h, s, v]
     - upper_hsv: Верхняя граница диапазона HSV [h, s, v]
     - max_area_ratio: Максимальное отношение площади связной области к общей площади карты
-                      (области больше этого значения будут считаться не лыжнями)
 
     Возвращает:
     - mask: Бинарная маска с выделенными лыжнями
@@ -261,8 +269,6 @@ def find_junction_points_improved(skeleton, min_distance=10, cleanup_branches=Tr
 
     # Группируем близкие точки с помощью DBSCAN
     if min_distance > 1 and len(junction_coords) > 0:
-        from sklearn.cluster import DBSCAN
-
         # Используем DBSCAN для группировки близких точек
         clustering = DBSCAN(eps=min_distance, min_samples=1).fit(junction_coords)
         labels = clustering.labels_
@@ -282,10 +288,153 @@ def find_junction_points_improved(skeleton, min_distance=10, cleanup_branches=Tr
     return junction_coords
 
 
+def detect_control_points(image, min_radius=CP_MIN_RADIUS, max_radius=CP_MAX_RADIUS, sensitivity=CP_SENSITIVITY):
+    """
+    Улучшенное обнаружение контрольных пунктов (КП) на карте.
+    Строго выделяет только круглые КП красного/пурпурного цвета.
+
+    Параметры:
+    - image: Исходное изображение (BGR формат из OpenCV)
+    - min_radius: Минимальный радиус КП
+    - max_radius: Максимальный радиус КП
+    - sensitivity: Чувствительность обнаружения кругов
+
+    Возвращает:
+    - control_points: Список координат КП в формате [(x, y, r), ...]
+    - color_mask: Цветовая маска для визуализации
+    """
+    # Копируем изображение для последующей визуализации
+    original = image.copy()
+
+    # 1. Создаем цветовые маски для разных оттенков КП
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+    # Маска для красного цвета (два диапазона в HSV)
+    lower_red1 = np.array([0, 90, 100])
+    upper_red1 = np.array([10, 255, 255])
+    mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+
+    lower_red2 = np.array([160, 90, 100])
+    upper_red2 = np.array([180, 255, 255])
+    mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+
+    # Маска для пурпурного цвета
+    lower_magenta = np.array([135, 50, 80])
+    upper_magenta = np.array([170, 255, 255])
+    mask3 = cv2.inRange(hsv, lower_magenta, upper_magenta)
+
+    # Объединяем маски
+    color_mask = cv2.bitwise_or(cv2.bitwise_or(mask1, mask2), mask3)
+
+    # 2. Очистка маски от шумов
+    kernel = np.ones((3, 3), np.uint8)
+    color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+    color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+    # 3. Создаем версию маски с тонкими линиями (для детекции контуров окружностей)
+    thin_edges = cv2.Canny(color_mask, 50, 150)
+
+    # 4. ТОЛЬКО круги: используем преобразование Хафа с очень строгими параметрами
+    control_points = []
+
+    # 4.1 Первый проход - находим все потенциальные круги
+    circles = cv2.HoughCircles(
+        thin_edges,
+        cv2.HOUGH_GRADIENT,
+        dp=1,
+        minDist=min_radius*2,  # Минимальное расстояние между центрами кругов
+        param1=50,
+        param2=sensitivity,
+        minRadius=min_radius,
+        maxRadius=max_radius
+    )
+
+    # Если круги не найдены, возвращаем пустой список
+    if circles is None:
+        return [], color_mask
+
+    # 4.2 Валидация каждого круга с помощью строгих проверок
+    circles = np.uint16(np.around(circles))
+    potential_circles = []
+
+    for i, circle in enumerate(circles[0, :]):
+        x, y, r = circle
+
+        # Проверка на границы изображения
+        if y < 0 or y >= color_mask.shape[0] or x < 0 or x >= color_mask.shape[1]:
+            continue
+
+        # # Проверка 1: создаем идеальную маску круга (только контур)
+        circle_mask = np.zeros_like(color_mask)
+        cv2.circle(circle_mask, (x, y), r, 255, 2)
+        #
+        # # Проверка 2: определяем, сколько пикселей маски совпадает с кругом
+        overlap = cv2.bitwise_and(color_mask, circle_mask)
+        circle_pixels = np.sum(circle_mask > 0)
+        overlap_pixels = np.sum(overlap > 0)
+        # #
+        # if circle_pixels == 0:
+        #     continue
+        # #
+        overlap_ratio = overlap_pixels / circle_pixels
+        # #
+        # # # Проверка 3: круг должен иметь минимум 75% совпадения контуров
+        # if overlap_ratio < 0.75:
+        #     continue
+        # #
+        # # Проверка 4: внутри круга не должно быть слишком много цвета
+        inner_mask = np.zeros_like(color_mask)
+        cv2.circle(inner_mask, (x, y), r-3, 255, -1)  # -1 означает заполненный круг
+        #
+        inner_overlap = cv2.bitwise_and(color_mask, inner_mask)
+        inner_area = np.sum(inner_mask > 0)
+        inner_overlap_pixels = np.sum(inner_overlap > 0)
+        #
+        if inner_area == 0:
+            continue
+        #
+        inner_ratio = inner_overlap_pixels / inner_area
+        #
+        # Если внутри слишком много цвета (больше 50%), это вероятно не КП
+        if inner_ratio > 0.5:
+            continue
+        #
+        # # Проверка 5: проверяем симметрию контура (КП должны быть идеально круглыми)
+        # # Берем 4 точки на окружности (верх, низ, лево, право) и проверяем их наличие в маске
+        # points_to_check = [
+        #     (x, y-r),  # Верхняя точка
+        #     (x, y+r),  # Нижняя точка
+        #     (x-r, y),  # Левая точка
+        #     (x+r, y)   # Правая точка
+        # ]
+        #
+        # valid_points = 0
+        # for px, py in points_to_check:
+        #     if (0 <= py < color_mask.shape[0] and 0 <= px < color_mask.shape[1] and
+        #         color_mask[py, px] > 0):
+        #         valid_points += 1
+        #
+        # # Должно быть как минимум 3 из 4 точек
+        # if valid_points < 3:
+        #     continue
+
+        # Если все проверки пройдены, добавляем как потенциальный КП
+        potential_circles.append((x, y, r, overlap_ratio))
+
+    # 4.3 Сортировка потенциальных кругов по качеству совпадения
+    potential_circles.sort(key=lambda c: c[3], reverse=True)
+
+    # 4.4 Проверка на пересечения и удаление дубликатов
+    for i, (x1, y1, r1, _) in enumerate(potential_circles):
+        control_points.append((x1, y1, r1))
+
+    return control_points, color_mask
+
+
 def process_map_with_dashed_lines(image_path, hsv_params, base_dir="test_results", show_steps=False, alpha=0.7):
     """
     Обработка карты с выделением всех лыжней одинаковыми тонкими линиями,
-    включая достраивание пунктирных линий.
+    включая достраивание пунктирных линий и обнаружение контрольных пунктов.
 
     Параметры:
     - image_path: Путь к изображению карты
@@ -299,6 +448,8 @@ def process_map_with_dashed_lines(image_path, hsv_params, base_dir="test_results
 
     # Загрузка изображения
     image = load_image(image_path)
+
+    # ====== ЧАСТЬ 1: ВЫДЕЛЕНИЕ ЛЫЖНЫХ ТРАСС ======
 
     # Параметры цветового диапазона
     lower_hsv = [hsv_params["h_min"], hsv_params["s_min"], hsv_params["v_min"]]
@@ -367,59 +518,113 @@ def process_map_with_dashed_lines(image_path, hsv_params, base_dir="test_results
     # 8. Скелетизируем все линии для получения тонких линий одинаковой толщины
     final_skeleton = skeletonize_mask(all_lines)
 
-    # 9. Создаем RGB изображение для визуализации
-    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    overlay = rgb_image.copy()
-
-    # 10. Создаем полупрозрачное наложение для линий
-    lines_overlay = np.zeros_like(rgb_image)
-
-    # Все линии одинаково зеленые
-    lines_overlay[final_skeleton > 0] = [0, 255, 0]  # Зеленый
-
-    # 11. Смешиваем изображения с учетом прозрачности
-    overlay = cv2.addWeighted(overlay, 1 - alpha, lines_overlay, alpha, 0)
-
-    # 12. Находим перекрестки на основе полного скелета
+    # 9. Находим перекрестки на основе полного скелета
     junctions = find_junction_points_improved(final_skeleton, min_distance=MIN_JUNCTION_DISTANCE, cleanup_branches=True)
 
     print(f"Найдено {len(junctions)} перекрестков")
 
-    # 13. Накладываем перекрестки
+    # ====== ЧАСТЬ 2: ОБНАРУЖЕНИЕ КОНТРОЛЬНЫХ ПУНКТОВ ======
+
+    # 10. Обнаружение контрольных пунктов
+    control_points, red_mask = detect_control_points(image)
+
+    print(f"Найдено {len(control_points)} контрольных пунктов")
+
+    # 11. Валидация КП по отношению к лыжням
+    validated_control_points = []
+    for x, y, r in control_points:
+        # Проверяем, находится ли КП рядом с лыжней или на ней
+        # Создаем область поиска вокруг КП
+        search_area = np.zeros_like(final_skeleton)
+        cv2.circle(search_area, (x, y), r + 20, 255, -1)  # +20 пикселей от края КП
+
+        # Проверяем пересечение с лыжнями
+        trail_overlap = cv2.bitwise_and(search_area, final_skeleton)
+        if np.sum(trail_overlap > 0) > 0:  # Если есть перекрытие с лыжнями
+            validated_control_points.append((x, y, r))
+
+    print(f"Из них {len(validated_control_points)} КП подтверждено (рядом с лыжнями)")
+    control_points = validated_control_points
+
+    # ====== ЧАСТЬ 3: ВИЗУАЛИЗАЦИЯ РЕЗУЛЬТАТОВ ======
+
+    # 12. Создаем RGB изображение для визуализации
+    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    overlay = rgb_image.copy()
+
+    # 13. Создаем полупрозрачное наложение для лыжней
+    lines_overlay = np.zeros_like(rgb_image)
+
+    # Все лыжни одинаково зеленые
+    lines_overlay[final_skeleton > 0] = [0, 255, 0]  # Зеленый
+
+    # 14. Смешиваем изображения с учетом прозрачности
+    overlay = cv2.addWeighted(overlay, 1 - alpha, lines_overlay, alpha, 0)
+
+    # 15. Накладываем перекрестки
     for y, x in junctions:
         cv2.circle(overlay, (x, y), JUNCTION_CIRCLE_RADIUS, [255, 255, 0], -1)  # Желтый цвет для перекрестков
 
+    # 16. Накладываем контрольные пункты
+    for x, y, r in control_points:
+        cv2.circle(overlay, (x, y), r, CP_CIRCLE_COLOR, 2)  # Красная окружность для КП
+        cv2.circle(overlay, (x, y), CP_CIRCLE_RADIUS, CP_CIRCLE_COLOR, -1)  # Красная точка в центре КП
+
     # Отображаем результаты, если требуется
     if show_steps:
-        plt.figure(figsize=(15, 12))
+        plt.figure(figsize=(15, 15))
 
-        plt.subplot(3, 2, 1)
+        plt.subplot(3, 3, 1)
         plt.title('Исходное изображение')
         plt.imshow(rgb_image)
         plt.axis('off')
 
-        plt.subplot(3, 2, 2)
-        plt.title('Исходная маска')
+        plt.subplot(3, 3, 2)
+        plt.title('Исходная маска лыжней')
         plt.imshow(mask, cmap='gray')
         plt.axis('off')
 
-        plt.subplot(3, 2, 3)
+        plt.subplot(3, 3, 3)
         plt.title('Сплошные линии')
         plt.imshow(solid_lines, cmap='gray')
         plt.axis('off')
 
-        plt.subplot(3, 2, 4)
+        plt.subplot(3, 3, 4)
         plt.title('Пунктирные линии (достроенные)')
         plt.imshow(dashed_skeleton, cmap='gray')
         plt.axis('off')
 
-        plt.subplot(3, 2, 5)
+        plt.subplot(3, 3, 5)
         plt.title('Общий скелет линий')
         plt.imshow(final_skeleton, cmap='gray')
         plt.axis('off')
 
-        plt.subplot(3, 2, 6)
-        plt.title(f'Итоговый результат ({len(junctions)} перекрестков)')
+        plt.subplot(3, 3, 6)
+        plt.title('Маска красного цвета (КП)')
+        plt.imshow(red_mask, cmap='gray')
+        plt.axis('off')
+
+        plt.subplot(3, 3, 7)
+        temp_img = rgb_image.copy()
+        # Отображаем перекрестки
+        for y, x in junctions:
+            cv2.circle(temp_img, (x, y), JUNCTION_CIRCLE_RADIUS, [255, 255, 0], -1)
+        plt.title(f'Перекрестки ({len(junctions)})')
+        plt.imshow(temp_img)
+        plt.axis('off')
+
+        plt.subplot(3, 3, 8)
+        temp_img = rgb_image.copy()
+        # Отображаем КП
+        for x, y, r in control_points:
+            cv2.circle(temp_img, (x, y), r, CP_CIRCLE_COLOR, 2)
+            cv2.circle(temp_img, (x, y), CP_CIRCLE_RADIUS, CP_CIRCLE_COLOR, -1)
+        plt.title(f'Контрольные пункты ({len(control_points)})')
+        plt.imshow(temp_img)
+        plt.axis('off')
+
+        plt.subplot(3, 3, 9)
+        plt.title(f'Итоговый результат')
         plt.imshow(overlay)
         plt.axis('off')
 
@@ -428,13 +633,18 @@ def process_map_with_dashed_lines(image_path, hsv_params, base_dir="test_results
 
     # Сохраняем результаты
     cv2.imwrite(os.path.join(save_dir, "all_lines_skeleton.png"), final_skeleton)
+    cv2.imwrite(os.path.join(save_dir, "red_mask.png"), red_mask)
     cv2.imwrite(
         os.path.join(save_dir, "result_uniform_lines.png"),
         cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR)
     )
 
+    # Сохраняем координаты перекрестков и КП для последующего использования
+    np.save(os.path.join(save_dir, "junctions.npy"), junctions)
+    np.save(os.path.join(save_dir, "control_points.npy"), np.array(control_points))
+
     print(f"Результаты сохранены в: {save_dir}")
-    return mask, final_skeleton, junctions
+    return mask, final_skeleton, junctions, control_points
 
 
 if __name__ == "__main__":
@@ -447,5 +657,7 @@ if __name__ == "__main__":
     if not os.path.exists(BASE_SAVE_DIR):
         os.makedirs(BASE_SAVE_DIR)
 
-    # Обработка изображения с выделением типов линий
-    mask, skeleton, junctions = process_map_with_dashed_lines(IMAGE_PATH, HSV_PARAMS, BASE_SAVE_DIR, True)
+    # Обработка изображения с выделением типов линий и КП
+    mask, skeleton, junctions, control_points = process_map_with_dashed_lines(
+        IMAGE_PATH, HSV_PARAMS, BASE_SAVE_DIR, SHOW_STEPS, OVERLAY_ALPHA
+    )
