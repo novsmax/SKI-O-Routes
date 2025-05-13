@@ -19,14 +19,14 @@ from trail_analyzer import process_map_with_dashed_lines
 
 
 def build_graph_from_skeleton(
-    skeleton_image: np.ndarray,
-    junctions: np.ndarray,
-    scale_factor: float = 1.0,
-    hsv_image: Optional[np.ndarray] = None
+        skeleton_image: np.ndarray,
+        junctions: np.ndarray,
+        scale_factor: float = 1.0,
+        hsv_image: Optional[np.ndarray] = None
 ) -> nx.Graph:
     """
     Построение графа из скелетизированного изображения лыжней и координат перекрестков
-    Упрощенная версия - без определения типа лыжни и учета рельефа
+    Оптимизированная версия с сохранением изначальной логики
 
     Args:
         skeleton_image: Бинарное изображение скелетизированных лыжней (значения 255 для лыжней)
@@ -37,6 +37,8 @@ def build_graph_from_skeleton(
     Returns:
         G: Граф, представляющий сеть лыжней
     """
+    import time
+    start_time = time.time()
     import networkx as nx
 
     print(f"Построение графа из {len(junctions)} перекрестков...")
@@ -48,33 +50,27 @@ def build_graph_from_skeleton(
     for i, (y, x) in enumerate(junctions):
         G.add_node(i, pos=(x, y), coordinates=(y, x), type="junction")
 
-    # 3. Альтернативный подход к построению графа:
-    # Вместо выделения сегментов будем напрямую искать соединения между перекрестками
+    # 3. Создаем более эффективную структуру для проверки близости к перекресткам
+    junction_proximity_radius = 7  # Увеличиваем радиус для надежности
+    junction_dict = {}
 
-    # Создаем карту расстояний от каждого пикселя до ближайшего перекрестка
-    # и метки, указывающие на индекс ближайшего перекрестка
-    h, w = skeleton_image.shape
-    distance_map = np.full((h, w), np.inf)
-    junction_id_map = np.full((h, w), -1, dtype=int)
-
-    # Заполняем начальные значения в карте расстояний
     for j_idx, (jy, jx) in enumerate(junctions):
-        if 0 <= jy < h and 0 <= jx < w:
-            distance_map[jy, jx] = 0
-            junction_id_map[jy, jx] = j_idx
+        junction_dict[j_idx] = (jy, jx)
 
-    # Получаем координаты всех пикселей скелета
-    skeleton_pixels = np.where(skeleton_image > 0)
-    skeleton_coords = list(zip(skeleton_pixels[0], skeleton_pixels[1]))
+    # 4. Получаем координаты всех пикселей скелета
+    y_coords, x_coords = np.where(skeleton_image > 0)
+    skeleton_coords = list(zip(y_coords, x_coords))
 
-    # Создаем изображение с метками сегментов
+    # 5. Создаем изображение с метками сегментов
     labeled_image = np.zeros_like(skeleton_image, dtype=int)
     current_label = 1
 
-    # Для каждого пикселя скелета
+    # 6. Для каждого пикселя скелета
+    segments_processed = 0
+
     for y, x in skeleton_coords:
-        # Пропускаем, если пиксель уже помечен или это перекресток
-        if labeled_image[y, x] != 0 or junction_id_map[y, x] >= 0:
+        # Пропускаем, если пиксель уже помечен
+        if labeled_image[y, x] != 0:
             continue
 
         # Запускаем трассировку сегмента от текущего пикселя
@@ -84,9 +80,9 @@ def build_graph_from_skeleton(
         # Начальные перекрестки для этого сегмента
         segment_junctions = set()
 
-        # Если пиксель близок к перекрестку, добавляем его
+        # Проверяем все перекрестки для стартовой точки сегмента
         for j_idx, (jy, jx) in enumerate(junctions):
-            if abs(y - jy) <= 5 and abs(x - jx) <= 5:
+            if (y - jy) ** 2 + (x - jx) ** 2 <= junction_proximity_radius ** 2:
                 segment_junctions.add(j_idx)
 
         # Очередь для обхода в ширину
@@ -105,25 +101,28 @@ def build_graph_from_skeleton(
 
                     ny, nx = cy + dy, cx + dx
 
-                    # Проверяем границы
-                    if ny < 0 or ny >= h or nx < 0 or nx >= w:
+                    # Пропускаем, если вышли за границы изображения
+                    if not (0 <= ny < skeleton_image.shape[0] and 0 <= nx < skeleton_image.shape[1]):
                         continue
 
                     # Проверяем, что это пиксель скелета и не посещен
                     if skeleton_image[ny, nx] > 0 and (ny, nx) not in visited:
-                        # Проверяем близость к перекрестку
                         junction_nearby = False
+
+                        # Проверяем близость к перекресткам
                         for j_idx, (jy, jx) in enumerate(junctions):
-                            if abs(ny - jy) <= 5 and abs(nx - jx) <= 5:
+                            if (ny - jy) ** 2 + (nx - jx) ** 2 <= junction_proximity_radius ** 2:
                                 segment_junctions.add(j_idx)
                                 junction_nearby = True
 
-                        # Если это не близко к перекрестку, продолжаем трассировку
+                        # Добавляем точку в сегмент независимо от близости к перекрестку
+                        labeled_image[ny, nx] = current_label
+                        current_segment.append((ny, nx))
+                        visited.add((ny, nx))
+
+                        # Если точка не рядом с перекрестком, продолжаем трассировку
                         if not junction_nearby:
-                            labeled_image[ny, nx] = current_label
-                            current_segment.append((ny, nx))
                             queue.append((ny, nx))
-                            visited.add((ny, nx))
 
         # Если сегмент соединяет ровно 2 разных перекрестка
         if len(segment_junctions) == 2:
@@ -133,7 +132,7 @@ def build_graph_from_skeleton(
             segment_length_pixels = len(current_segment)
             segment_length_meters = segment_length_pixels * scale_factor
 
-            # Рассчитываем итоговый вес (просто время по расстоянию)
+            # Рассчитываем итоговый вес
             weight = calculate_final_weight(segment_length_meters)
 
             # Добавляем ребро
@@ -149,9 +148,15 @@ def build_graph_from_skeleton(
                 coords_x=np.array([p[1] for p in current_segment])
             )
 
+            segments_processed += 1
+
         current_label += 1
 
+    end_time = time.time()
+    print(f"Обработано {segments_processed} сегментов")
     print(f"Граф построен: {G.number_of_nodes()} вершин, {G.number_of_edges()} рёбер")
+    print(f"Время выполнения: {end_time - start_time:.2f} секунд")
+
     return G
 
 
