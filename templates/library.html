@@ -8,10 +8,41 @@
     <a href="/" class="btn btn-primary">Добавить новую карту</a>
 </div>
 
+<div class="card mb-4">
+    <div class="card-header py-2">
+        <h6 class="mb-0">Фильтры</h6>
+    </div>
+    <div class="card-body py-3">
+        <form id="filterForm" class="row g-2">
+            <div class="col-md-5">
+                <label for="locationFilter" class="form-label">Место проведения</label>
+                <select id="locationFilter" class="form-select">
+                    <option value="">Все места</option>
+                    {% for location in locations %}
+                    <option value="{{ location }}">{{ location }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-5">
+                <label for="dateFilter" class="form-label">Сортировка по дате</label>
+                <select id="dateFilter" class="form-select">
+                    <option value="">Без сортировки</option>
+                    <option value="newest">Сначала новые</option>
+                    <option value="oldest">Сначала старые</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end justify-content-end pb-1">
+                <button type="button" id="applyFilters" class="btn btn-primary btn-sm me-2">Применить</button>
+                <button type="button" id="resetFilters" class="btn btn-outline-secondary btn-sm">Сбросить</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="row" id="mapCards">
     {% if maps %}
         {% for map in maps %}
-        <div class="col-md-4 mb-4">
+        <div class="col-md-4 mb-4 map-card" data-location="{{ map.location }}" data-date="{{ map.created_at.strftime('%Y-%m-%d') if map.created_at else '' }}">
             <div class="card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">{{ map.title }}</h5>
@@ -35,9 +66,106 @@
         </div>
         {% endfor %}
     {% else %}
-        <div class="col-12 text-center py-5">
+        <div class="col-12 text-center py-5" id="noMapsMessage">
             <p class="text-muted">В библиотеке пока нет карт. <a href="/">Добавьте первую карту</a>.</p>
         </div>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const mapCards = document.querySelectorAll('.map-card');
+        const locationFilter = document.getElementById('locationFilter');
+        const dateFilter = document.getElementById('dateFilter');
+        const applyFiltersBtn = document.getElementById('applyFilters');
+        const resetFiltersBtn = document.getElementById('resetFilters');
+        
+        // Обработчик кнопки применения фильтров
+        applyFiltersBtn.addEventListener('click', function() {
+            applyFilters();
+        });
+        
+        // Обработчик кнопки сброса фильтров
+        resetFiltersBtn.addEventListener('click', function() {
+            locationFilter.value = '';
+            dateFilter.value = '';
+            applyFilters();
+        });
+        
+        // Функция применения фильтров
+        function applyFilters() {
+            const selectedLocation = locationFilter.value;
+            const selectedDateSort = dateFilter.value;
+            
+            let visibleCards = 0;
+            
+            mapCards.forEach(card => {
+                const cardLocation = card.dataset.location;
+                let isVisible = true;
+                
+                if (selectedLocation && cardLocation !== selectedLocation) {
+                    isVisible = false;
+                }
+                
+                if (isVisible) {
+                    card.style.display = '';
+                    visibleCards++;
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+            
+            if (selectedDateSort && visibleCards > 0) {
+                const cardsArray = Array.from(mapCards).filter(card => card.style.display !== 'none');
+                const container = document.getElementById('mapCards');
+                
+                cardsArray.sort((a, b) => {
+                    const dateA = new Date(a.dataset.date || '1970-01-01');
+                    const dateB = new Date(b.dataset.date || '1970-01-01');
+                    
+                    if (selectedDateSort === 'newest') {
+                        return dateB - dateA;
+                    } else {
+                        return dateA - dateB;
+                    }
+                });
+                
+                cardsArray.forEach(card => {
+                    container.appendChild(card);
+                });
+            }
+            
+            displayNoMapsMessage(visibleCards);
+        }
+        
+        // Функция отображения сообщения об отсутствии карт
+        function displayNoMapsMessage(visibleCards) {
+            // Проверяем, существует ли уже элемент сообщения
+            let noMapsMessage = document.getElementById('noMapsMessage');
+            
+            if (visibleCards === 0) {
+                if (!noMapsMessage) {
+                    // Создаем сообщение, если его нет
+                    noMapsMessage = document.createElement('div');
+                    noMapsMessage.id = 'noMapsMessage';
+                    noMapsMessage.className = 'col-12 text-center py-5';
+                    document.getElementById('mapCards').appendChild(noMapsMessage);
+                }
+                
+                noMapsMessage.style.display = '';
+                noMapsMessage.innerHTML = '<p class="text-muted">Карты с выбранными фильтрами не найдены.</p>';
+            } else {
+                if (noMapsMessage) {
+                    noMapsMessage.style.display = 'none';
+                }
+            }
+        }
+        
+        mapCards.forEach((card, index) => {
+            card.dataset.originalOrder = index;
+        });
+    });
+</script>
 {% endblock %}

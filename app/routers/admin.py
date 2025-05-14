@@ -8,6 +8,7 @@ from ..database import get_db
 from ..models import Map
 
 router = APIRouter(
+    prefix="/admin",
     tags=["admin"],
     responses={404: {"description": "Not found"}},
 )
@@ -51,7 +52,6 @@ async def delete_map(map_id: int, db: Session = Depends(get_db)):
     if not map_data:
         raise HTTPException(status_code=404, detail="Карта не найдена")
 
-    # Удаляем файлы
     if map_data.stored_filename:
         file_path = os.path.join("uploads", map_data.stored_filename)
         if os.path.exists(file_path):
@@ -62,7 +62,6 @@ async def delete_map(map_id: int, db: Session = Depends(get_db)):
         if os.path.exists(processed_path):
             os.remove(processed_path)
 
-    # Удаляем запись из базы данных
     db.delete(map_data)
     db.commit()
 

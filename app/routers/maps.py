@@ -1,5 +1,5 @@
 """
-Обновленный роутер с добавлением эндпоинта для поиска ближайших перекрестков
+Обновленный роутер для использования сохраненного графа
 """
 from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -27,12 +27,8 @@ router = APIRouter(
 templates = Jinja2Templates(directory="templates")
 
 
-# ВАЖНО: поместить маршруты с фиксированными путями ПЕРЕД маршрутами с переменными путями
-# -----------------------------
-
 @router.get("/test")
 async def test_api():
-    """Тестовый эндпоинт для проверки API."""
     return {"status": "ok", "message": "API работает корректно"}
 
 
@@ -43,9 +39,7 @@ async def list_maps(db: Session = Depends(get_db)):
         maps = db.query(Map).all()
         result = []
 
-        # Ручная сериализация объектов SQLAlchemy
         for map_obj in maps:
-            # Преобразуем SQLAlchemy-модель в словарь
             map_dict = {
                 "id": map_obj.id,
                 "title": map_obj.title,
@@ -75,18 +69,14 @@ async def upload_map(
         db: Session = Depends(get_db)
 ):
     """Загрузка новой карты."""
-    # Валидация типа файла
     if not file.content_type.startswith('image/'):
         raise HTTPException(status_code=400, detail="Файл должен быть изображением")
 
-    # Создаем уникальное имя файла
     filename = f"{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
     file_path = os.path.join("uploads", filename)
 
-    # Сохраняем файл
     await save_upload_file(file, file_path)
 
-    # Создаем запись в базе данных
     new_map = Map(
         title=title,
         location=location,
@@ -99,12 +89,10 @@ async def upload_map(
     db.commit()
     db.refresh(new_map)
 
-    # Перенаправляем на страницу просмотра карты
     return RedirectResponse(url=f"/maps/{new_map.id}", status_code=303)
 
 
-# Теперь определяем маршруты с переменными путями ПОСЛЕ маршрутов с фиксированными путями
-# -----------------------------
+
 
 @router.get("/{map_id}", response_class=HTMLResponse)
 async def get_map(request: Request, map_id: int, db: Session = Depends(get_db)):
@@ -135,22 +123,16 @@ async def analyze_map(request: Request, map_id: int, db: Session = Depends(get_d
         if not map_data:
             raise HTTPException(status_code=404, detail="Карта не найдена")
 
-        # Путь к исходному изображению
         original_path = os.path.join("uploads", map_data.stored_filename)
 
-        # Проверяем существование файла
         if not os.path.exists(original_path):
             return {"success": False, "error": "Исходный файл карты не найден"}
 
-        # Создаем процессор карт и запускаем обработку
-        from ..services.map_processor import MapProcessor
-        processor = MapProcessor(original_path)
+        processor = MapProcessor(original_path, db=db, map_id=map_id)
         processed_path = processor.process()
 
-        # Извлекаем только имя файла из полного пути
         processed_filename = os.path.basename(processed_path)
 
-        # Обновляем запись в базе данных
         map_data.processed_filename = processed_filename
         map_data.is_processed = True
         db.commit()
@@ -173,14 +155,6 @@ async def find_junctions(
 ):
     """
     Находит ближайшие перекрестки (развилки) к выбранным точкам.
-
-    Args:
-        map_id: ID карты
-        start_x, start_y: Координаты начальной точки
-        end_x, end_y: Координаты конечной точки
-
-    Returns:
-        Координаты ближайших перекрестков к начальной и конечной точке
     """
     try:
         map_data = db.query(Map).filter(Map.id == map_id).first()
@@ -190,29 +164,23 @@ async def find_junctions(
         if not map_data.is_processed:
             return {"success": False, "error": "Карта еще не обработана. Сначала нужно выполнить анализ карты."}
 
-        # Путь к исходному изображению
         original_path = os.path.join("uploads", map_data.stored_filename)
 
-        # Создаем процессор карт
-        from ..services.map_processor import MapProcessor
-        processor = MapProcessor(original_path)
+        processor = MapProcessor(original_path, db=db, map_id=map_id)
 
-        # Сначала выполняем процесс обработки, чтобы построить графовую модель
-        processor.process()
+        if processor.graph is None:
+            processor.process()
 
-        # Получаем координаты ближайших перекрестков
         start_junction = processor.find_nearest_junction((start_x, start_y))
         end_junction = processor.find_nearest_junction((end_x, end_y))
 
         if not start_junction or not end_junction:
             return {"success": False, "error": "Не удалось найти ближайшие перекрестки"}
 
-        # Возвращаем координаты перекрестков
-        # В части кода, где возвращается ответ:
         return {
             "success": True,
             "start_junction": {
-                "x": int(start_junction[0]),  # Преобразуем numpy.int64 в int
+                "x": int(start_junction[0]),
                 "y": int(start_junction[1])
             },
             "end_junction": {
@@ -238,11 +206,6 @@ async def find_route(
 ):
     """
     Находит оптимальный маршрут между двумя точками на карте.
-
-    Args:
-        map_id: ID карты
-        start_x, start_y: Координаты начальной точки
-        end_x, end_y: Координаты конечной точки
     """
     try:
         map_data = db.query(Map).filter(Map.id == map_id).first()
@@ -252,21 +215,13 @@ async def find_route(
         if not map_data.is_processed:
             return {"success": False, "error": "Карта еще не обработана. Сначала нужно выполнить анализ карты."}
 
-        # Путь к исходному изображению
         original_path = os.path.join("uploads", map_data.stored_filename)
 
-        # Создаем процессор карт
-        from ..services.map_processor import MapProcessor
-        processor = MapProcessor(original_path)
+        processor = MapProcessor(original_path, db=db, map_id=map_id)
 
-        # Сначала выполняем процесс обработки, чтобы построить графовую модель
-        processor.process()
-
-        # Находим оптимальный маршрут
         result_path = processor.find_route((start_x, start_y), (end_x, end_y))
 
         if result_path:
-            # Извлекаем имя файла из полного пути
             route_filename = os.path.basename(result_path)
             return {"success": True, "route_path": f"/processed/{route_filename}"}
         else:

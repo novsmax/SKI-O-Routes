@@ -1,6 +1,3 @@
-"""
-Исправление маршрута библиотеки в main.py
-"""
 from fastapi import FastAPI, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -8,10 +5,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 
-# Используем абсолютные импорты вместо относительных
 from app.database import get_db, init_db
 from app.routers import maps, admin
-from app.models import Map  # Добавляем импорт модели Map для маршрута библиотеки
+from app.models import Map
 
 os.makedirs("templates/includes", exist_ok=True)
 app = FastAPI(title="Цифровой ассистент спортивного ориентирования")
@@ -25,20 +21,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Проверяем существование директорий
 os.makedirs("app/static", exist_ok=True)
 os.makedirs("uploads", exist_ok=True)
 os.makedirs("processed", exist_ok=True)
 
-# Подключение статических файлов
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.mount("/processed", StaticFiles(directory="processed"), name="processed")
 
-# Подключение шаблонов
 templates = Jinja2Templates(directory="templates")
 
-# Подключение маршрутов
 app.include_router(maps.router)
 app.include_router(admin.router)
 
@@ -61,11 +53,19 @@ async def index(request: Request):
 @app.get("/library", response_class=HTMLResponse)
 async def library(request: Request, db=Depends(get_db)):
     """Страница библиотеки карт."""
-    # Получаем все карты из базы данных
     maps = db.query(Map).all()
 
-    # Передаем карты в шаблон
-    return templates.TemplateResponse("library.html", {"request": request, "maps": maps})
+    locations = set()
+    for map_item in maps:
+        if map_item.location:
+            locations.add(map_item.location)
+
+    locations = sorted(list(locations))
+
+    return templates.TemplateResponse(
+        "library.html",
+        {"request": request, "maps": maps, "locations": locations}
+    )
 
 if __name__ == "__main__":
     import uvicorn

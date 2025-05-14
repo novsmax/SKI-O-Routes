@@ -23,5 +23,4 @@ class MapResponse(BaseModel):
     updated_at: Optional[datetime] = None
     is_processed: bool
 
-    # Для совместимости с Pydantic v2
     model_config = ConfigDict(from_attributes=True)

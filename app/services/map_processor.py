@@ -1,30 +1,47 @@
 """
-Обновленный MapProcessor с поддержкой поиска ближайших перекрестков
+Исправленный MapProcessor с корректной сериализацией без параметра attrs
 """
 
 import os
 import cv2
 import numpy as np
-from PIL import Image
 import networkx as nx
-from typing import Tuple, Optional, List, Dict
-
-# Импортируем функции из модулей анализа
+import json
+import pickle
+import base64
+from typing import Tuple, Optional, List, Dict, Any
+from sqlalchemy.orm import Session
 
 from app.trail_analyzer import process_map_with_dashed_lines
 from app.graph_builder import build_graph_from_skeleton, find_optimal_route, visualize_route, remove_disconnected_vertices
+from app.models import Map
 
-
+# Создаем пользовательский JSON encoder для NumPy типов
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        return super().default(obj)
 
 class MapProcessor:
-    def __init__(self, map_path: str):
+    def __init__(self, map_path: str, db: Optional[Session] = None, map_id: Optional[int] = None):
         """
         Инициализация процессора карт.
 
         Args:
             map_path: Путь к файлу карты
+            db: Сессия базы данных (опционально)
+            map_id: ID карты в базе данных (опционально)
         """
         self.map_path = map_path
+        self.db = db
+        self.map_id = map_id
         self.graph = None
         self.junctions = None
         self.skeleton = None
@@ -42,6 +59,72 @@ class MapProcessor:
         # Масштабный коэффициент для преобразования пикселей в метры
         self.scale_factor = 1.0
 
+        # Пытаемся загрузить сохраненный граф, если доступны db и map_id
+        if db and map_id:
+            self._load_saved_graph()
+
+    def _load_saved_graph(self) -> bool:
+        """
+        Загружает сохраненный граф и перекрестки из базы данных.
+
+        Returns:
+            True, если загрузка успешна, иначе False
+        """
+        if not self.db or not self.map_id:
+            return False
+
+        try:
+            map_data = self.db.query(Map).filter(Map.id == self.map_id).first()
+            if not map_data or not map_data.graph_data or not map_data.junctions_data:
+                return False
+
+            # Десериализуем граф из JSON
+            graph_dict = json.loads(map_data.graph_data)
+            self.graph = nx.node_link_graph(graph_dict, directed=False, multigraph=False)
+
+            # Десериализуем перекрестки из pickle
+            self.junctions = pickle.loads(map_data.junctions_data)
+
+            print(f"Граф успешно загружен из базы данных: {len(self.junctions)} перекрестков, {self.graph.number_of_nodes()} вершин, {self.graph.number_of_edges()} рёбер")
+            return True
+        except Exception as e:
+            print(f"Ошибка при загрузке графа из базы данных: {str(e)}")
+            return False
+
+    def _save_graph_to_db(self) -> bool:
+        """
+        Сохраняет граф и перекрестки в базу данных.
+
+        Returns:
+            True, если сохранение успешно, иначе False
+        """
+        if not self.db or not self.map_id or not isinstance(self.graph, nx.Graph) or not isinstance(self.junctions, np.ndarray):
+            return False
+
+        try:
+            # Сериализуем граф в JSON, используя кастомный энкодер для NumPy типов
+            # Убираем параметр attrs, который вызывает ошибку
+            graph_dict = nx.node_link_data(self.graph, edges="links")
+            graph_json = json.dumps(graph_dict, cls=NumpyEncoder)
+
+            # Сериализуем перекрестки в pickle
+            junctions_pickle = pickle.dumps(self.junctions)
+
+            # Обновляем запись в базе данных
+            map_data = self.db.query(Map).filter(Map.id == self.map_id).first()
+            if map_data:
+                map_data.graph_data = graph_json
+                map_data.junctions_data = junctions_pickle
+                self.db.commit()
+                print(f"Граф успешно сохранен в базу данных")
+                return True
+            return False
+        except Exception as e:
+            print(f"Ошибка при сохранении графа в базу данных: {str(e)}")
+            import traceback
+            traceback.print_exc()  # Распечатаем полный стек ошибки для отладки
+            return False
+
     def process(self) -> str:
         """
         Обработка карты и создание визуализации оптимальных маршрутов.
@@ -54,25 +137,29 @@ class MapProcessor:
         os.makedirs(base_dir, exist_ok=True)
 
         try:
-            # 1. Выделение лыжней и перекрестков
-            print(f"Обработка карты: {self.map_path}")
-            mask, self.skeleton, self.junctions = process_map_with_dashed_lines(
-                self.map_path,
-                self.hsv_params,
-                base_dir,
-                show_steps=False,
-                alpha=0.7
-            )
+            # Проверяем, загружен ли уже граф
+            if isinstance(self.graph, nx.Graph) and isinstance(self.junctions, np.ndarray) and len(self.junctions) > 0:
+                print("Используем ранее построенный граф")
+            else:
+                # 1. Выделение лыжней и перекрестков
+                print(f"Обработка карты: {self.map_path}")
+                mask, self.skeleton, self.junctions = process_map_with_dashed_lines(
+                    self.map_path,
+                    self.hsv_params,
+                    base_dir,
+                    show_steps=False,
+                    alpha=0.7
+                )
 
-            filename = os.path.basename(self.map_path)
-            base_name = os.path.splitext(filename)[0]
-            save_dir = os.path.join(base_dir, base_name)
+                # 2. Построение графовой модели
+                self.graph = build_graph_from_skeleton(self.skeleton, self.junctions, self.scale_factor)
 
-            # 2. Построение графовой модели
-            self.graph = build_graph_from_skeleton(self.skeleton, self.junctions, self.scale_factor)
+                # Удаляем несвязанные вершины для создания более чистого графа
+                self.graph = remove_disconnected_vertices(self.graph)
 
-            # Удаляем несвязанные вершины для создания более чистого графа
-            self.graph = remove_disconnected_vertices(self.graph)
+                # Сохраняем граф в базу данных
+                if self.db and self.map_id:
+                    self._save_graph_to_db()
 
             # 3. Визуализация результатов с примером оптимального маршрута
             output_path = self._get_output_path()
@@ -116,6 +203,8 @@ class MapProcessor:
 
         except Exception as e:
             print(f"Ошибка при обработке карты: {str(e)}")
+            import traceback
+            traceback.print_exc()  # Печатаем полный стек вызовов для отладки
 
             # В случае ошибки создаем простую визуализацию, чтобы не ломать интерфейс
             output_path = self._get_output_path()
@@ -210,13 +299,15 @@ class MapProcessor:
 
                 # Создаем наложение для скелета
                 overlay = original_image.copy()
-                for y, x in zip(*np.where(self.skeleton > 0)):
+                skeleton_coords = np.where(self.skeleton > 0)
+                for y, x in zip(skeleton_coords[0], skeleton_coords[1]):
                     cv2.circle(overlay, (x, y), 1, (0, 255, 0), -1)  # Зеленый цвет для лыжней
 
                 # Добавляем перекрестки
-                if self.junctions is not None:
-                    for y, x in self.junctions:
-                        cv2.circle(overlay, (x, y), 5, (0, 0, 255), -1)  # Красный цвет для перекрестков
+                if self.junctions is not None and len(self.junctions) > 0:
+                    for junction in self.junctions:
+                        y, x = junction
+                        cv2.circle(overlay, (int(x), int(y)), 5, (0, 0, 255), -1)  # Красный цвет для перекрестков
 
                 # Сохраняем результат
                 cv2.imwrite(output_path, overlay)
@@ -261,11 +352,11 @@ class MapProcessor:
         Returns:
             Путь к визуализации маршрута или None, если маршрут не найден
         """
-        if self.graph is None:
-            print("Граф не построен. Сначала вызовите метод process().")
+        if not isinstance(self.graph, nx.Graph):
+            print("Граф не построен. Сначала вызовите метод process() или загрузите граф из базы данных.")
             return None
 
-        if self.junctions is None or len(self.junctions) == 0:
+        if not isinstance(self.junctions, np.ndarray) or len(self.junctions) == 0:
             print("Перекрестки не найдены. Невозможно построить маршрут.")
             return None
 
@@ -312,15 +403,12 @@ class MapProcessor:
         Returns:
             Координаты ближайшего перекрестка (x, y) или None, если перекрестки не найдены
         """
-        if self.junctions is None or len(self.junctions) == 0:
+        if not isinstance(self.junctions, np.ndarray) or len(self.junctions) == 0:
             return None
 
         # Преобразуем координаты из (x, y) в (y, x), так как junctions хранятся в формате (y, x)
         x, y = point
 
-        print(f"Ищем для точек {x} {y}")
-
-        debug_img = cv2.imread(self.map_path)
         # Вычисляем расстояния до всех перекрестков
         min_dist = float('inf')
         nearest_junction = None
@@ -332,26 +420,6 @@ class MapProcessor:
             if dist < min_dist:
                 min_dist = dist
                 nearest_junction = (jx, jy)  # Возвращаем в формате (x, y)
-
-        for jy, jx in self.junctions:
-            jx_int = int(jx)
-            jy_int = int(jy)
-            # Зеленый кружок
-            cv2.circle(debug_img, (jx_int, jy_int), 5, (0, 255, 0), -1)
-            # Подпись координат справа от точки
-            cv2.putText(
-                debug_img,
-                f"({jx_int}, {jy_int})",
-                (jx_int + 10, jy_int + 5),  # Смещение текста
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.4,  # Уменьшенный размер шрифта
-                (0, 255, 0),  # Зеленый цвет
-                1
-            )
-
-            # Сохраняем изображение
-        cv2.imwrite("debug_junctions_with_labels.jpg", debug_img)
-
 
         return nearest_junction
 
@@ -365,7 +433,7 @@ class MapProcessor:
         Returns:
             Индекс ближайшей вершины или None, если граф не построен
         """
-        if self.graph is None or self.junctions is None:
+        if not isinstance(self.graph, nx.Graph) or not isinstance(self.junctions, np.ndarray):
             return None
 
         # Преобразуем координаты из (x, y) в (y, x), так как junctions хранятся в формате (y, x)

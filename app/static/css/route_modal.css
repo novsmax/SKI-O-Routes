@@ -1,0 +1,157 @@
+/**
+ * route_modal.css - Стили для компонентов выбора маршрута
+ */
+
+/* Стили для обработанной карты */
+#processedMap, #originalMap {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Стили для индикатора загрузки */
+.loading-spinner {
+    width: 50px;
+    height: 50px;
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Стили для модального окна выбора маршрута */
+.map-modal-content {
+    width: 90vw;
+    max-width: 1200px;
+    max-height: 90vh;
+}
+
+.route-map-container {
+    position: relative;
+    overflow: auto;
+    max-height: 70vh;
+}
+
+.route-map-image {
+    max-width: 100%;
+    height: auto;
+    cursor: crosshair;
+}
+
+/* Стили для точек и перекрестков */
+.selector-point {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    margin-left: -10px;
+    margin-top: -10px;
+    z-index: 20;
+    display: none;
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+}
+
+.start-point {
+    background-color: green;
+    border: 2px solid white;
+}
+
+.end-point {
+    background-color: red;
+    border: 2px solid white;
+}
+
+.junction-point {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    margin-left: -8px;
+    margin-top: -8px;
+    z-index: 19;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
+}
+
+.junction-start {
+    background-color: rgb(100, 200, 100);
+    border: 2px solid white;
+}
+
+.junction-end {
+    background-color: rgb(200, 100, 100);
+    border: 2px solid white;
+}
+
+/* Стили для соединительных линий */
+.connection-line {
+    position: absolute;
+    z-index: 18;
+    border-top: 2px dashed rgba(100, 100, 100, 0.7);
+    transform-origin: 0 0;
+}
+
+/* Стили для анимированных линий */
+@keyframes dashedLine {
+    0% {
+        background-position: 0 0;
+    }
+    100% {
+        background-position: 100% 0;
+    }
+}
+
+.animated-dashed {
+    background-image: linear-gradient(to right, rgba(100, 100, 100, 0.7) 50%, transparent 50%);
+    background-size: 20px 1px;
+    animation: dashedLine 1s linear infinite;
+}
+
+/* Стили для меток */
+.point-label {
+    position: absolute;
+    background-color: rgba(255, 255, 255, 0.8);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    margin-left: 10px;
+    margin-top: -10px;
+    white-space: nowrap;
+    z-index: 21;
+}
+
+/* Стили для легенды */
+.legend-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.color-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+
+/* Стили для оверлея загрузки */
+.map-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10;
+}
+
+/* Стили для шапки модального окна */
+.modal-header.bg-primary {
+    color: white;
+}
