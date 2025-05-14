@@ -1,14 +1,9 @@
-/**
- * route_modal.css - Стили для компонентов выбора маршрута
- */
 
-/* Стили для обработанной карты */
 #processedMap, #originalMap {
     max-width: 100%;
     height: auto;
 }
 
-/* Стили для индикатора загрузки */
 .loading-spinner {
     width: 50px;
     height: 50px;
@@ -23,7 +18,6 @@
     100% { transform: rotate(360deg); }
 }
 
-/* Стили для модального окна выбора маршрута */
 .map-modal-content {
     width: 90vw;
     max-width: 1200px;
@@ -49,7 +43,6 @@
     cursor: crosshair;
 }
 
-/* Стили для точек и перекрестков */
 .selector-point {
     position: absolute;
     width: 20px;
@@ -93,7 +86,6 @@
     border: 2px solid white;
 }
 
-/* Стили для соединительных линий */
 .connection-line {
     position: absolute;
     z-index: 18;
@@ -101,7 +93,6 @@
     transform-origin: 0 0;
 }
 
-/* Стили для анимированных линий */
 @keyframes dashedLine {
     0% {
         background-position: 0 0;
@@ -117,7 +108,6 @@
     animation: dashedLine 1s linear infinite;
 }
 
-/* Стили для меток */
 .point-label {
     position: absolute;
     background-color: rgba(255, 255, 255, 0.8);
@@ -130,7 +120,6 @@
     z-index: 21;
 }
 
-/* Стили для легенды */
 .legend-item {
     display: flex;
     align-items: center;
@@ -144,7 +133,6 @@
     margin-right: 8px;
 }
 
-/* Стили для оверлея загрузки */
 .map-overlay {
     position: absolute;
     top: 0;
@@ -158,7 +146,6 @@
     z-index: 10;
 }
 
-/* Стили для шапки модального окна */
 .modal-header.bg-primary {
     color: white;
 }

@@ -1,8 +1,5 @@
-/**
- * route_handler.js - Обработка выбора и визуализации маршрутов ориентирования
- */
 
-// Глобальные переменные для хранения координат
+
 let startPointSelected = false;
 let endPointSelected = false;
 let startX = 0;
@@ -10,30 +7,24 @@ let startY = 0;
 let endX = 0;
 let endY = 0;
 
-// Глобальные переменные для хранения ближайших перекрестков
 let startJunctionX = 0;
 let startJunctionY = 0;
 let endJunctionX = 0;
 let endJunctionY = 0;
 let junctionsFound = false;
 
-// Глобальные переменные для хранения размеров изображения
 let imageNaturalWidth = 0;
 let imageNaturalHeight = 0;
 
-// Переменная для хранения пути к маршруту
 let routeFound = false;
 let routeImagePath = null;
 
-// Инициализация модальных окон
 let routeModal;
 let errorModal;
 
-// Текущий ID карты
 let currentMapId;
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Получаем ID карты из URL страницы
     const pathParts = window.location.pathname.split('/');
     const mapIdIndex = pathParts.indexOf('maps') + 1;
     if (mapIdIndex > 0 && mapIdIndex < pathParts.length) {
@@ -43,11 +34,9 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error("Не удалось получить ID карты из URL");
     }
 
-    // Инициализация модальных окон
     routeModal = new bootstrap.Modal(document.getElementById('routeModal'));
     errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
 
-    // Добавляем обработчик клика на изображение карты в модальном окне
     const routeMapImage = document.getElementById('routeMapImage');
     if (routeMapImage) {
         routeMapImage.addEventListener('click', mapClickHandler);
@@ -55,21 +44,16 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error("Не найден элемент routeMapImage");
     }
 
-    // Инициализируем размеры изображения
     initializeImageSizes();
 
-    // Обработчик события открытия модального окна маршрута
     document.getElementById('routeModal').addEventListener('shown.bs.modal', function() {
-        // Обновляем размеры изображения при открытии модального окна
         initializeImageSizes();
     });
 });
 
-// Функция для получения размеров изображения при загрузке
 function initializeImageSizes() {
     const routeMapImage = document.getElementById('routeMapImage');
 
-    // Дождемся загрузки изображения
     if (routeMapImage.complete) {
         updateImageSizes(routeMapImage);
     } else {
@@ -79,12 +63,10 @@ function initializeImageSizes() {
     }
 }
 
-// Функция обновления размеров изображения
 function updateImageSizes(imgElement) {
     imageNaturalWidth = imgElement.naturalWidth;
     imageNaturalHeight = imgElement.naturalHeight;
 
-    // Также сохраняем отображаемые размеры изображения
     const displayedWidth = imgElement.width;
     const displayedHeight = imgElement.height;
 
@@ -93,7 +75,6 @@ function updateImageSizes(imgElement) {
     console.log('Соотношение масштаба:', imageNaturalWidth / displayedWidth, imageNaturalHeight / displayedHeight);
 }
 
-// Функция для анализа карты
 async function analyzeMap() {
     if (!currentMapId) {
         console.error("ID карты не определен");
@@ -101,80 +82,80 @@ async function analyzeMap() {
         return;
     }
 
-    // Отображаем загрузочный спиннер
+
     const loadingOverlay = document.getElementById('loadingOverlay');
     loadingOverlay.style.display = 'flex';
 
-    // Деактивируем кнопку и показываем процесс загрузки
+
     const analyzeBtn = document.getElementById('analyzeBtn');
     analyzeBtn.disabled = true;
     analyzeBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Анализируем...';
 
     try {
-        // Отправляем запрос на анализ карты
+
         const response = await fetch(`/maps/${currentMapId}/analyze`, {
             method: 'POST'
         });
 
         const data = await response.json();
 
-        // Скрываем загрузочный спиннер
+
         loadingOverlay.style.display = 'none';
 
         if (data.success) {
-            // Перезагружаем страницу для обновления статуса
+
             setTimeout(() => {
                 window.location.reload();
             }, 1000);
         } else {
-            // Показываем ошибку
+
             showError(data.error || 'Произошла ошибка при анализе карты');
 
-            // Возвращаем кнопку в исходное состояние
+
             analyzeBtn.disabled = false;
             analyzeBtn.innerHTML = '<i class="bi bi-graph-up"></i> Анализировать карту';
         }
     } catch (error) {
-        // Скрываем загрузочный спиннер
+
         loadingOverlay.style.display = 'none';
 
         console.error('Ошибка:', error);
         showError('Произошла ошибка при анализе карты');
 
-        // Возвращаем кнопку в исходное состояние
+
         analyzeBtn.disabled = false;
         analyzeBtn.innerHTML = '<i class="bi bi-graph-up"></i> Анализировать карту';
     }
 }
 
-// Функция для отображения ошибки в модальном окне
+
 function showError(message) {
     const errorMessage = document.getElementById('errorMessage');
     errorMessage.textContent = message;
     errorModal.show();
 }
 
-// Функция для открытия модального окна выбора маршрута
+
 function openRouteModal() {
-    // Сбрасываем точки перед открытием
+
     resetPoints();
 
-    // Сбрасываем результат
+
     routeFound = false;
     routeImagePath = null;
 
-    // Показываем контейнер с картой, скрываем контейнер с результатом
+
     document.getElementById('routeMapContainer').style.display = 'block';
     document.getElementById('routeResultContainer').style.display = 'none';
     document.getElementById('routeInfoCard').style.display = 'none';
 
-    // Открываем модальное окно
+
     routeModal.show();
 }
 
-// Обработчик клика на карте в модальном окне
+
 function mapClickHandler(event) {
-    if (routeFound) return; // Если маршрут уже найден, игнорируем клики
+    if (routeFound) return;
 
     const mapElement = event.target;
     const startPoint = document.getElementById('modalStartPoint');
@@ -182,22 +163,22 @@ function mapClickHandler(event) {
     const startLabel = document.getElementById('startPointLabel');
     const endLabel = document.getElementById('endPointLabel');
 
-    // Получаем координаты относительно самого изображения
+
     const rect = mapElement.getBoundingClientRect();
 
-    // Получаем координаты клика относительно окна
+
     const clientX = event.clientX;
     const clientY = event.clientY;
 
-    // Преобразуем координаты клика на экране в координаты на изображении
+
     const clickX = clientX - rect.left;
     const clickY = clientY - rect.top;
 
     console.log('Клик по карте:', clickX, clickY);
 
-    // Устанавливаем начальную или конечную точку
+
     if (!startPointSelected) {
-        // Сохраняем координаты
+
         startX = clickX;
         startY = clickY;
 
@@ -350,7 +331,7 @@ function resetPoints() {
     document.getElementById('findRouteBtn').disabled = true;
 }
 
-//  поиск оптимального маршрута
+
 async function findRoute() {
     if (!startPointSelected || !endPointSelected || !junctionsFound || !currentMapId) {
         showError('Необходимо выбрать как начальную, так и конечную точку маршрута');
@@ -422,7 +403,7 @@ async function findRoute() {
     }
 }
 
-// отображение результата в модальном окне
+
 function showRouteResult(imagePath) {
     document.getElementById('routeMapContainer').style.display = 'none';
 

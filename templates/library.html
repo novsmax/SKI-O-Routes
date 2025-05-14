@@ -82,19 +82,19 @@
         const applyFiltersBtn = document.getElementById('applyFilters');
         const resetFiltersBtn = document.getElementById('resetFilters');
         
-        // Обработчик кнопки применения фильтров
+
         applyFiltersBtn.addEventListener('click', function() {
             applyFilters();
         });
         
-        // Обработчик кнопки сброса фильтров
+
         resetFiltersBtn.addEventListener('click', function() {
             locationFilter.value = '';
             dateFilter.value = '';
             applyFilters();
         });
         
-        // Функция применения фильтров
+
         function applyFilters() {
             const selectedLocation = locationFilter.value;
             const selectedDateSort = dateFilter.value;
@@ -140,14 +140,14 @@
             displayNoMapsMessage(visibleCards);
         }
         
-        // Функция отображения сообщения об отсутствии карт
+
         function displayNoMapsMessage(visibleCards) {
-            // Проверяем, существует ли уже элемент сообщения
+
             let noMapsMessage = document.getElementById('noMapsMessage');
             
             if (visibleCards === 0) {
                 if (!noMapsMessage) {
-                    // Создаем сообщение, если его нет
+
                     noMapsMessage = document.createElement('div');
                     noMapsMessage.id = 'noMapsMessage';
                     noMapsMessage.className = 'col-12 text-center py-5';

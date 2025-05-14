@@ -3,7 +3,6 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 
-# Получаем URL базы данных из переменной окружения или используем значение по умолчанию
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./orienteering.db")
 print(f"Используется база данных: {DATABASE_URL}")
 
@@ -21,6 +20,6 @@ def get_db():
 
 def init_db():
     """Инициализация базы данных."""
-    from .models import Map  # Импортируем модели здесь во избежание циклических импортов
+    from .models import Map
     Base.metadata.create_all(bind=engine)
     print("База данных инициализирована")
