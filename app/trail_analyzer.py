@@ -245,6 +245,8 @@ def find_junction_points_improved(skeleton, min_distance=10, cleanup_branches=Tr
         if num_branches >= 3:
             verified_junctions.append((y, x))
 
+
+
     # Конвертируем в массив numpy
     if verified_junctions:
         junction_coords = np.array(verified_junctions)
@@ -268,6 +270,7 @@ def find_junction_points_improved(skeleton, min_distance=10, cleanup_branches=Tr
             junction_coords_clustered.append(centroid)
 
         junction_coords = np.array(junction_coords_clustered)
+
 
     return junction_coords
 

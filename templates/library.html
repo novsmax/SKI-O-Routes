@@ -35,84 +35,9 @@
         </div>
         {% endfor %}
     {% else %}
-        <!-- Показываем спиннер загрузки, если данные не переданы из бэкенда -->
-        <div class="col-12 text-center py-5" id="loadingIndicator">
-            <div class="spinner-border" role="status">
-                <span class="visually-hidden">Загрузка...</span>
-            </div>
-            <p class="mt-2">Загрузка библиотеки карт...</p>
-        </div>
-        <div class="col-12 text-center py-5 d-none" id="noMapsMessage">
+        <div class="col-12 text-center py-5">
             <p class="text-muted">В библиотеке пока нет карт. <a href="/">Добавьте первую карту</a>.</p>
-        </div>
-        <div class="col-12 text-center py-5 d-none" id="errorMessage">
-            <div class="alert alert-danger">
-                <h4>Ошибка при загрузке библиотеки карт</h4>
-                <p id="errorDetails">Произошла непредвиденная ошибка</p>
-                <button class="btn btn-outline-secondary mt-2" onclick="window.location.reload()">Попробовать снова</button>
-            </div>
         </div>
     {% endif %}
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-    // Эта функция будет выполняться, только если карты не были переданы из бэкенда
-    {% if not maps %}
-    document.addEventListener('DOMContentLoaded', async () => {
-        const loadingIndicator = document.getElementById('loadingIndicator');
-        const noMapsMessage = document.getElementById('noMapsMessage');
-        const errorMessageContainer = document.getElementById('errorMessage');
-        const errorDetails = document.getElementById('errorDetails');
-        const mapCardsContainer = document.getElementById('mapCards');
-
-        try {
-            // Сначала проверим, работает ли API
-            console.log("Проверка API...");
-            const testResponse = await fetch('/maps/test');
-            if (!testResponse.ok) {
-                throw new Error(`Тест API не удался: ${testResponse.status}`);
-            }
-
-            // API работает, загружаем список карт
-            console.log("Загрузка списка карт...");
-            const response = await fetch('/maps/list');
-
-            if (!response.ok) {
-                let errorText = `HTTP ошибка: ${response.status}`;
-                try {
-                    const errorData = await response.json();
-                    errorText += ` - ${errorData.detail || JSON.stringify(errorData)}`;
-                } catch {
-                    // Если не удалось прочитать JSON с ошибкой
-                }
-                throw new Error(errorText);
-            }
-
-            const maps = await response.json();
-            console.log("Получены данные карт:", maps);
-
-            // Скрываем индикатор загрузки
-            loadingIndicator.classList.add('d-none');
-
-            if (!maps || maps.length === 0) {
-                // Если карт нет, показываем сообщение
-                noMapsMessage.classList.remove('d-none');
-            } else {
-                // Создаем карточки для каждой карты
-                maps.forEach(map => {
-                    // Создание DOM элементов для карточек...
-                    // Код для создания карточек оставлен для краткости
-                });
-            }
-        } catch (error) {
-            console.error('Ошибка при загрузке карт:', error);
-            loadingIndicator.classList.add('d-none');
-            errorDetails.textContent = error.message || 'Произошла непредвиденная ошибка';
-            errorMessageContainer.classList.remove('d-none');
-        }
-    });
-    {% endif %}
-</script>
 {% endblock %}

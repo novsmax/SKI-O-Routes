@@ -12,7 +12,7 @@ import networkx as nx
 import cv2
 import matplotlib.pyplot as plt
 from typing import List, Tuple, Dict, Optional, Any
-from trail_analyzer import process_map_with_dashed_lines
+from app.trail_analyzer import process_map_with_dashed_lines
 
 
 def build_graph_from_skeleton(

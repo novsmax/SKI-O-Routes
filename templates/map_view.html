@@ -2,6 +2,155 @@
 
 {% block title %}{{ map.title }} - Просмотр карты{% endblock %}
 
+{% block extra_css %}
+<style>
+    #processedMap, #originalMap {
+        max-width: 100%;
+        height: auto;
+    }
+
+    .loading-spinner {
+        width: 50px;
+        height: 50px;
+        border: 5px solid #f3f3f3;
+        border-top: 5px solid #3498db;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Стили для модального окна выбора маршрута */
+    .map-modal-content {
+        width: 90vw;
+        max-width: 1200px;
+        max-height: 90vh;
+    }
+
+    .route-map-container {
+        position: relative;
+        overflow: auto;
+        max-height: 70vh;
+    }
+
+    .route-map-image {
+        max-width: 100%;
+        height: auto;
+        cursor: crosshair;
+    }
+
+    .selector-point {
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        margin-left: -10px;
+        margin-top: -10px;
+        z-index: 20;
+        display: none;
+        box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+    }
+
+    .start-point {
+        background-color: green;
+        border: 2px solid white;
+    }
+
+    .end-point {
+        background-color: red;
+        border: 2px solid white;
+    }
+
+    .junction-point {
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        margin-left: -8px;
+        margin-top: -8px;
+        z-index: 19;
+        box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
+    }
+
+    .junction-start {
+        background-color: rgb(100, 200, 100);
+        border: 2px solid white;
+    }
+
+    .junction-end {
+        background-color: rgb(200, 100, 100);
+        border: 2px solid white;
+    }
+
+    .connection-line {
+        position: absolute;
+        z-index: 18;
+        border-top: 2px dashed rgba(100, 100, 100, 0.7);
+        transform-origin: 0 0;
+    }
+
+    .point-label {
+        position: absolute;
+        background-color: rgba(255, 255, 255, 0.8);
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 12px;
+        margin-left: 10px;
+        margin-top: -10px;
+        white-space: nowrap;
+    }
+
+    .legend-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+
+    .color-dot {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        margin-right: 8px;
+    }
+
+    .map-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10;
+    }
+
+    .modal-header.bg-primary {
+        color: white;
+    }
+
+    /* Анимация для соединительной линии */
+    @keyframes dashedLine {
+        0% {
+            background-position: 0 0;
+        }
+        100% {
+            background-position: 100% 0;
+        }
+    }
+
+    .animated-dashed {
+        background-image: linear-gradient(to right, rgba(100, 100, 100, 0.7) 50%, transparent 50%);
+        background-size: 20px 1px;
+        animation: dashedLine 1s linear infinite;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1>{{ map.title }}</h1>
@@ -15,7 +164,9 @@
             <h5>Информация о карте</h5>
             <div>
                 {% if not map.is_processed %}
-                <button id="analyzeBtn" class="btn btn-primary" onclick="analyzeMap()">Анализировать маршруты</button>
+                <button id="analyzeBtn" class="btn btn-primary" onclick="analyzeMap()">Анализировать карту</button>
+                {% else %}
+                <button id="routeBtn" class="btn btn-success" onclick="openRouteModal()">Построить маршрут</button>
                 {% endif %}
             </div>
         </div>
@@ -44,24 +195,141 @@
             <div class="card-header">
                 <h5>Оригинальная карта</h5>
             </div>
-            <div class="card-body">
-                <img src="{{ upload_path }}" class="img-fluid" alt="Оригинальная карта">
+            <div class="card-body" id="originalMapContainer">
+                <img src="{{ upload_path }}" id="originalMap" class="img-fluid" alt="Оригинальная карта">
+
+                <!-- Оверлей для отображения процесса загрузки -->
+                <div id="loadingOverlay" class="map-overlay" style="display: none;">
+                    <div class="loading-spinner"></div>
+                </div>
             </div>
         </div>
     </div>
     <div class="col-md-6">
         <div class="card mb-4">
             <div class="card-header">
-                <h5>Карта с оптимальными маршрутами</h5>
+                <h5 id="resultCardTitle">Карта с оптимальными маршрутами</h5>
             </div>
             <div class="card-body" id="processedMapContainer">
                 {% if map.is_processed and processed_path %}
-                <img src="{{ processed_path }}" class="img-fluid" alt="Обработанная карта">
+                <img src="{{ processed_path }}" id="processedMap" class="img-fluid" alt="Обработанная карта">
                 {% else %}
                 <div class="text-center py-5">
-                    <p class="text-muted">Карта еще не обработана. Нажмите "Анализировать маршруты", чтобы начать обработку.</p>
+                    <p class="text-muted">Карта еще не обработана. Нажмите "Анализировать карту", чтобы начать обработку.</p>
                 </div>
                 {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно для выбора маршрута -->
+<div class="modal fade" id="routeModal" tabindex="-1" aria-labelledby="routeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content map-modal-content">
+            <div class="modal-header bg-primary">
+                <h5 class="modal-title" id="routeModalLabel">Выбор маршрута</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="container-fluid">
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">Инструкция</h6>
+                                </div>
+                                <div class="card-body">
+                                    <ol>
+                                        <li>Кликните на карте, чтобы выбрать <strong>начальную точку</strong> (зеленая)</li>
+                                        <li>Кликните снова, чтобы выбрать <strong>конечную точку</strong> (красная)</li>
+                                        <li>Система найдет ближайшие перекрестки лыжней к выбранным точкам</li>
+                                        <li>Нажмите кнопку <strong>"Построить маршрут"</strong></li>
+                                    </ol>
+
+                                    <div class="mt-4">
+                                        <h6>Обозначения:</h6>
+                                        <div class="legend-item">
+                                            <div class="color-dot" style="background-color: green;"></div>
+                                            <span>Начальная точка (выбранная)</span>
+                                        </div>
+                                        <div class="legend-item">
+                                            <div class="color-dot" style="background-color: rgb(100, 200, 100);"></div>
+                                            <span>Ближайший перекресток к началу</span>
+                                        </div>
+                                        <div class="legend-item">
+                                            <div class="color-dot" style="background-color: red;"></div>
+                                            <span>Конечная точка (выбранная)</span>
+                                        </div>
+                                        <div class="legend-item">
+                                            <div class="color-dot" style="background-color: rgb(200, 100, 100);"></div>
+                                            <span>Ближайший перекресток к концу</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="alert alert-info mt-3">
+                                        <small>Система строит маршрут между перекрестками лыжней. После выбора точек вы увидите ближайшие перекрестки к ним.</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-8">
+                            <div class="route-map-container">
+                                <img src="{{ upload_path }}" id="routeMapImage" class="route-map-image" alt="Выбор маршрута">
+
+                                <!-- Выбранные точки -->
+                                <div id="modalStartPoint" class="selector-point start-point"></div>
+                                <div id="modalEndPoint" class="selector-point end-point"></div>
+
+                                <!-- Ближайшие перекрестки -->
+                                <div id="startJunction" class="junction-point junction-start" style="display: none;"></div>
+                                <div id="endJunction" class="junction-point junction-end" style="display: none;"></div>
+
+                                <!-- Соединительные линии -->
+                                <div id="startConnectionLine" class="connection-line" style="display: none;"></div>
+                                <div id="endConnectionLine" class="connection-line" style="display: none;"></div>
+
+                                <!-- Метки точек -->
+                                <div id="startPointLabel" class="point-label" style="display: none;">Начало</div>
+                                <div id="startJunctionLabel" class="point-label" style="display: none;">Ближайший перекресток</div>
+                                <div id="endPointLabel" class="point-label" style="display: none;">Конец</div>
+                                <div id="endJunctionLabel" class="point-label" style="display: none;">Ближайший перекресток</div>
+
+                                <!-- Оверлей загрузки для модального окна -->
+                                <div id="modalLoadingOverlay" class="map-overlay" style="display: none;">
+                                    <div class="loading-spinner"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="d-flex justify-content-between w-100">
+                    <button type="button" class="btn btn-outline-secondary" onclick="resetPoints()">Сбросить точки</button>
+                    <div>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                        <button type="button" class="btn btn-primary" id="findRouteBtn" onclick="findRoute()" disabled>Построить маршрут</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно с ошибкой -->
+<div class="modal fade" id="errorModal" tabindex="-1" aria-labelledby="errorModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="errorModalLabel">Ошибка</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="errorMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
             </div>
         </div>
     </div>
@@ -70,7 +338,51 @@
 
 {% block extra_js %}
 <script>
+    // Глобальные переменные для хранения координат
+    let startPointSelected = false;
+    let endPointSelected = false;
+    let startX = 0;
+    let startY = 0;
+    let endX = 0;
+    let endY = 0;
+
+    // Глобальные переменные для хранения ближайших перекрестков
+    let startJunctionX = 0;
+    let startJunctionY = 0;
+    let endJunctionX = 0;
+    let endJunctionY = 0;
+    let junctionsFound = false;
+
+    // Инициализация модальных окон
+    let routeModal;
+    let errorModal;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Инициализация модальных окон
+        routeModal = new bootstrap.Modal(document.getElementById('routeModal'));
+        errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
+
+        // Добавляем обработчик клика на изображение карты в модальном окне
+        const routeMapImage = document.getElementById('routeMapImage');
+        routeMapImage.addEventListener('click', mapClickHandler);
+
+        // Обработчик события закрытия модального окна маршрута
+        document.getElementById('routeModal').addEventListener('hidden.bs.modal', function() {
+            // Если был создан маршрут и модальное окно закрывается, обновляем страницу
+            const processedMap = document.getElementById('processedMap');
+            if (processedMap && processedMap.dataset.isRoute === 'true') {
+                // Перезагружаем страницу для обновления состояния
+                // window.location.reload();
+            }
+        });
+    });
+
+    // Функция для анализа карты
     async function analyzeMap() {
+        // Отображаем загрузочный спиннер
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        loadingOverlay.style.display = 'flex';
+
         // Деактивируем кнопку и показываем процесс загрузки
         const analyzeBtn = document.getElementById('analyzeBtn');
         analyzeBtn.disabled = true;
@@ -84,28 +396,322 @@
 
             const data = await response.json();
 
+            // Скрываем загрузочный спиннер
+            loadingOverlay.style.display = 'none';
+
             if (data.success) {
                 // Обновляем контейнер с обработанной картой
                 const processedMapContainer = document.getElementById('processedMapContainer');
-                processedMapContainer.innerHTML = `<img src="${data.processed_path}" class="img-fluid" alt="Обработанная карта">`;
+                processedMapContainer.innerHTML = `<img src="${data.processed_path}" id="processedMap" class="img-fluid" alt="Обработанная карта">`;
 
                 // Обновляем UI
                 analyzeBtn.classList.add('d-none');
+
+                // Добавляем кнопку для построения маршрута
+                const btnContainer = analyzeBtn.parentElement;
+                btnContainer.innerHTML = `<button id="routeBtn" class="btn btn-success" onclick="openRouteModal()">Построить маршрут</button>`;
 
                 // Перезагружаем страницу для обновления статуса
                 setTimeout(() => {
                     window.location.reload();
                 }, 1000);
             } else {
-                alert('Произошла ошибка при анализе карты');
+                // Показываем ошибку
+                showError(data.error || 'Произошла ошибка при анализе карты');
+
+                // Возвращаем кнопку в исходное состояние
                 analyzeBtn.disabled = false;
-                analyzeBtn.innerHTML = 'Анализировать маршруты';
+                analyzeBtn.innerHTML = 'Анализировать карту';
             }
         } catch (error) {
+            // Скрываем загрузочный спиннер
+            loadingOverlay.style.display = 'none';
+
             console.error('Ошибка:', error);
-            alert('Произошла ошибка при анализе карты');
+            showError('Произошла ошибка при анализе карты');
+
+            // Возвращаем кнопку в исходное состояние
             analyzeBtn.disabled = false;
-            analyzeBtn.innerHTML = 'Анализировать маршруты';
+            analyzeBtn.innerHTML = 'Анализировать карту';
+        }
+    }
+
+    // Функция для отображения ошибки в модальном окне
+    function showError(message) {
+        const errorMessage = document.getElementById('errorMessage');
+        errorMessage.textContent = message;
+        errorModal.show();
+    }
+
+    // Функция для открытия модального окна выбора маршрута
+    function openRouteModal() {
+        // Сбрасываем точки перед открытием
+        resetPoints();
+
+        // Открываем модальное окно
+        routeModal.show();
+    }
+
+    // Обработчик клика на карте в модальном окне
+    function mapClickHandler(event) {
+        const mapElement = event.target;
+        const startPoint = document.getElementById('modalStartPoint');
+        const endPoint = document.getElementById('modalEndPoint');
+        const startLabel = document.getElementById('startPointLabel');
+        const endLabel = document.getElementById('endPointLabel');
+
+        // Получаем координаты клика относительно изображения
+        const rect = mapElement.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+
+        // Устанавливаем начальную или конечную точку
+        if (!startPointSelected) {
+            // Устанавливаем начальную точку
+            startPoint.style.left = `${x}px`;
+            startPoint.style.top = `${y}px`;
+            startPoint.style.display = 'block';
+
+            // Устанавливаем метку
+            startLabel.style.left = `${x}px`;
+            startLabel.style.top = `${y}px`;
+            startLabel.style.display = 'block';
+
+            startPointSelected = true;
+
+            // Сохраняем координаты
+            startX = x;
+            startY = y;
+
+            // Если конечная точка уже выбрана, ищем ближайшие перекрестки
+            if (endPointSelected) {
+                findNearestJunctions();
+            }
+        } else if (!endPointSelected) {
+            // Устанавливаем конечную точку
+            endPoint.style.left = `${x}px`;
+            endPoint.style.top = `${y}px`;
+            endPoint.style.display = 'block';
+
+            // Устанавливаем метку
+            endLabel.style.left = `${x}px`;
+            endLabel.style.top = `${y}px`;
+            endLabel.style.display = 'block';
+
+            endPointSelected = true;
+
+            // Сохраняем координаты
+            endX = x;
+            endY = y;
+
+            // Ищем ближайшие перекрестки
+            findNearestJunctions();
+        }
+    }
+
+    // Функция для поиска ближайших перекрестков
+    async function findNearestJunctions() {
+        if (!startPointSelected || !endPointSelected) return;
+
+        // Показываем индикатор загрузки
+        const modalLoadingOverlay = document.getElementById('modalLoadingOverlay');
+        modalLoadingOverlay.style.display = 'flex';
+
+        try {
+            // Формируем данные для запроса
+            const formData = new FormData();
+            formData.append('start_x', Math.round(startX));
+            formData.append('start_y', Math.round(startY));
+            formData.append('end_x', Math.round(endX));
+            formData.append('end_y', Math.round(endY));
+
+            // Отправляем запрос на сервер для получения ближайших перекрестков
+            const response = await fetch('/maps/{{ map.id }}/find_junctions', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            // Скрываем индикатор загрузки
+            modalLoadingOverlay.style.display = 'none';
+
+            if (data.success) {
+                // Получаем элементы для отображения перекрестков
+                const startJunction = document.getElementById('startJunction');
+                const endJunction = document.getElementById('endJunction');
+                const startJunctionLabel = document.getElementById('startJunctionLabel');
+                const endJunctionLabel = document.getElementById('endJunctionLabel');
+                const startConnectionLine = document.getElementById('startConnectionLine');
+                const endConnectionLine = document.getElementById('endConnectionLine');
+
+                // Сохраняем координаты перекрестков
+                startJunctionX = data.start_junction.x;
+                startJunctionY = data.start_junction.y;
+                endJunctionX = data.end_junction.x;
+                endJunctionY = data.end_junction.y;
+
+                // Отображаем начальный перекресток
+                startJunction.style.left = `${startJunctionX}px`;
+                startJunction.style.top = `${startJunctionY}px`;
+                startJunction.style.display = 'block';
+
+                // Отображаем конечный перекресток
+                endJunction.style.left = `${endJunctionX}px`;
+                endJunction.style.top = `${endJunctionY}px`;
+                endJunction.style.display = 'block';
+
+                // Отображаем метки перекрестков
+                startJunctionLabel.style.left = `${startJunctionX}px`;
+                startJunctionLabel.style.top = `${startJunctionY}px`;
+                startJunctionLabel.style.display = 'block';
+
+                endJunctionLabel.style.left = `${endJunctionX}px`;
+                endJunctionLabel.style.top = `${endJunctionY}px`;
+                endJunctionLabel.style.display = 'block';
+
+                // Отображаем соединительную линию от начальной точки к перекрестку
+                drawConnectionLine(startConnectionLine, startX, startY, startJunctionX, startJunctionY);
+
+                // Отображаем соединительную линию от конечной точки к перекрестку
+                drawConnectionLine(endConnectionLine, endX, endY, endJunctionX, endJunctionY);
+
+                // Устанавливаем флаг, что перекрестки найдены
+                junctionsFound = true;
+
+                // Активируем кнопку построения маршрута
+                document.getElementById('findRouteBtn').disabled = false;
+            } else {
+                showError(data.error || 'Не удалось найти ближайшие перекрестки');
+            }
+        } catch (error) {
+            // Скрываем индикатор загрузки
+            modalLoadingOverlay.style.display = 'none';
+
+            console.error('Ошибка:', error);
+            showError('Произошла ошибка при поиске ближайших перекрестков');
+        }
+    }
+
+    // Функция для отрисовки соединительной линии между двумя точками
+    function drawConnectionLine(lineElement, x1, y1, x2, y2) {
+        // Вычисляем длину и угол линии
+        const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+
+        // Устанавливаем позицию, длину и угол линии
+        lineElement.style.left = `${x1}px`;
+        lineElement.style.top = `${y1}px`;
+        lineElement.style.width = `${length}px`;
+        lineElement.style.transform = `rotate(${angle}deg)`;
+
+        // Добавляем класс для анимации
+        lineElement.classList.add('animated-dashed');
+
+        // Отображаем линию
+        lineElement.style.display = 'block';
+    }
+
+    // Функция для сброса выбранных точек
+    function resetPoints() {
+        // Сбрасываем состояние выбора точек
+        startPointSelected = false;
+        endPointSelected = false;
+        junctionsFound = false;
+
+        // Скрываем все элементы
+        document.getElementById('modalStartPoint').style.display = 'none';
+        document.getElementById('modalEndPoint').style.display = 'none';
+        document.getElementById('startPointLabel').style.display = 'none';
+        document.getElementById('endPointLabel').style.display = 'none';
+        document.getElementById('startJunction').style.display = 'none';
+        document.getElementById('endJunction').style.display = 'none';
+        document.getElementById('startJunctionLabel').style.display = 'none';
+        document.getElementById('endJunctionLabel').style.display = 'none';
+        document.getElementById('startConnectionLine').style.display = 'none';
+        document.getElementById('endConnectionLine').style.display = 'none';
+
+        // Деактивируем кнопку построения маршрута
+        document.getElementById('findRouteBtn').disabled = true;
+    }
+
+    // Функция для построения маршрута
+    async function findRoute() {
+        // Проверяем, что обе точки выбраны и перекрестки найдены
+        if (!startPointSelected || !endPointSelected || !junctionsFound) {
+            showError('Необходимо выбрать как начальную, так и конечную точку маршрута');
+            return;
+        }
+
+        // Отображаем загрузочный спиннер
+        const modalLoadingOverlay = document.getElementById('modalLoadingOverlay');
+        modalLoadingOverlay.style.display = 'flex';
+
+        // Деактивируем кнопку
+        const findRouteBtn = document.getElementById('findRouteBtn');
+        findRouteBtn.disabled = true;
+        findRouteBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Строим маршрут...';
+
+        try {
+            // Формируем данные для отправки - используем координаты перекрестков, а не выбранных точек
+            const formData = new FormData();
+            formData.append('start_x', Math.round(startJunctionX));
+            formData.append('start_y', Math.round(startJunctionY));
+            formData.append('end_x', Math.round(endJunctionX));
+            formData.append('end_y', Math.round(endJunctionY));
+
+            // Отправляем запрос для построения маршрута
+            const response = await fetch('/maps/{{ map.id }}/find_route', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            // Скрываем загрузочный спиннер
+            modalLoadingOverlay.style.display = 'none';
+
+            if (data.success) {
+                // Обновляем контейнер с результатом маршрута в основном интерфейсе
+                const processedMapContainer = document.getElementById('processedMapContainer');
+                // Добавляем случайный параметр к URL для предотвращения кэширования
+                const cacheParam = new Date().getTime();
+                processedMapContainer.innerHTML = `<img src="${data.route_path}?t=${cacheParam}" id="processedMap" class="img-fluid" alt="Оптимальный маршрут" data-is-route="true">`;
+
+                // Обновляем заголовок карты
+                document.getElementById('resultCardTitle').textContent = 'Оптимальный маршрут';
+
+                // Закрываем модальное окно
+                routeModal.hide();
+
+                // Показываем сообщение об успехе
+                const successAlert = document.createElement('div');
+                successAlert.className = 'alert alert-success mt-3';
+                successAlert.innerHTML = '<strong>Успех!</strong> Маршрут успешно построен.';
+                processedMapContainer.appendChild(successAlert);
+
+                // Удаляем сообщение через 5 секунд
+                setTimeout(() => {
+                    successAlert.remove();
+                }, 5000);
+            } else {
+                // Показываем ошибку
+                showError(data.error || 'Не удалось построить маршрут');
+
+                // Возвращаем кнопку в исходное состояние
+                findRouteBtn.disabled = false;
+                findRouteBtn.innerHTML = 'Построить маршрут';
+            }
+        } catch (error) {
+            // Скрываем загрузочный спиннер
+            modalLoadingOverlay.style.display = 'none';
+
+            console.error('Ошибка:', error);
+            showError('Произошла ошибка при построении маршрута');
+
+            // Возвращаем кнопку в исходное состояние
+            findRouteBtn.disabled = false;
+            findRouteBtn.innerHTML = 'Построить маршрут';
         }
     }
 </script>

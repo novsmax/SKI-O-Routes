@@ -1,6 +1,5 @@
 import cv2
-import numpy as np
-from graph_builder import process_original_map, find_optimal_route, visualize_route
+from app.graph_builder import process_original_map, find_optimal_route, visualize_route
 
 # Укажите РЕАЛЬНЫЙ путь к вашему изображению
 IMAGE_PATH = "YEyQ1MkbKcY.jpg"  # Измените на ваш реальный путь

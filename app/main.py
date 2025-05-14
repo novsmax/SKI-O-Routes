@@ -1,7 +1,6 @@
 """
-Основной файл приложения с исправленными импортами
+Исправление маршрута библиотеки в main.py
 """
-
 from fastapi import FastAPI, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -12,6 +11,7 @@ import os
 # Используем абсолютные импорты вместо относительных
 from app.database import get_db, init_db
 from app.routers import maps, admin
+from app.models import Map  # Добавляем импорт модели Map для маршрута библиотеки
 
 os.makedirs("templates/includes", exist_ok=True)
 app = FastAPI(title="Цифровой ассистент спортивного ориентирования")
@@ -40,7 +40,8 @@ templates = Jinja2Templates(directory="templates")
 
 # Подключение маршрутов
 app.include_router(maps.router)
-app.include_router(admin.router, prefix="/admin")
+app.include_router(admin.router)
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -50,15 +51,21 @@ async def startup_event():
     except Exception as e:
         print(f"Ошибка инициализации базы данных: {e}")
 
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Главная страница приложения."""
     return templates.TemplateResponse("index.html", {"request": request})
 
+
 @app.get("/library", response_class=HTMLResponse)
-async def library(request: Request):
+async def library(request: Request, db=Depends(get_db)):
     """Страница библиотеки карт."""
-    return templates.TemplateResponse("library.html", {"request": request, "maps": []})
+    # Получаем все карты из базы данных
+    maps = db.query(Map).all()
+
+    # Передаем карты в шаблон
+    return templates.TemplateResponse("library.html", {"request": request, "maps": maps})
 
 if __name__ == "__main__":
     import uvicorn

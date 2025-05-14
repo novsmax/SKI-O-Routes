@@ -43,8 +43,78 @@
                             {% endif %}
                         </td>
                         <td>
-                            <!-- Действия и модальные окна -->
-                            <!-- Код для кнопок действий и модальных окон сокращен для краткости -->
+                            <!-- Кнопки действий -->
+                            <div class="btn-group">
+                                <a href="/maps/{{ map.id }}" class="btn btn-sm btn-primary" title="Просмотр">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+
+                                <!-- Кнопка редактирования (открывает модальное окно) -->
+                                <button type="button" class="btn btn-sm btn-warning"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#editModal{{ map.id }}"
+                                        title="Редактировать">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+
+                                <!-- Кнопка удаления (открывает модальное окно подтверждения) -->
+                                <button type="button" class="btn btn-sm btn-danger"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#deleteModal{{ map.id }}"
+                                        title="Удалить">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+
+                            <!-- Модальное окно редактирования -->
+                            <div class="modal fade" id="editModal{{ map.id }}" tabindex="-1" aria-labelledby="editModalLabel{{ map.id }}" aria-hidden="true">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title" id="editModalLabel{{ map.id }}">Редактирование карты</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                        </div>
+                                        <form action="/admin/maps/{{ map.id }}/update" method="post">
+                                            <div class="modal-body">
+                                                <div class="mb-3">
+                                                    <label for="title{{ map.id }}" class="form-label">Название</label>
+                                                    <input type="text" class="form-control" id="title{{ map.id }}" name="title" value="{{ map.title }}" required>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="location{{ map.id }}" class="form-label">Место проведения</label>
+                                                    <input type="text" class="form-control" id="location{{ map.id }}" name="location" value="{{ map.location }}" required>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                                                <button type="submit" class="btn btn-primary">Сохранить</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Модальное окно удаления -->
+                            <div class="modal fade" id="deleteModal{{ map.id }}" tabindex="-1" aria-labelledby="deleteModalLabel{{ map.id }}" aria-hidden="true">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title" id="deleteModalLabel{{ map.id }}">Подтверждение удаления</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <p>Вы действительно хотите удалить карту "{{ map.title }}"?</p>
+                                            <p class="text-danger">Это действие невозможно отменить.</p>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                                            <form action="/admin/maps/{{ map.id }}/delete" method="post">
+                                                <button type="submit" class="btn btn-danger">Удалить</button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
