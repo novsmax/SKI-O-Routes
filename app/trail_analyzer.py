@@ -11,7 +11,6 @@ import os
 from sklearn.cluster import DBSCAN
 
 
-
 HSV_PARAMS = {
     "h_min": 55,
     "h_max": 70,

@@ -559,10 +559,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-
     print(f"Обработка карты: {args.image}")
     print(f"Масштаб: {args.scale} м/пиксель")
-
 
     G, junctions = process_original_map(
         args.image,
@@ -572,7 +570,6 @@ if __name__ == "__main__":
         args.show_steps
     )
 
-
     path, length = find_optimal_route(G, args.start, args.end)
 
     if path:
@@ -580,8 +577,6 @@ if __name__ == "__main__":
 
 
         original_image = cv2.imread(args.image)
-
-
         filename = os.path.basename(args.image)
         base_name = os.path.splitext(filename)[0]
         save_dir = os.path.join(args.output, base_name)
