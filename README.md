@@ -104,7 +104,7 @@ HSV_PARAMS = {
 
 1. Клонируйте репозиторий:
    ```bash
-   git clone https://github.com/yourusername/ski-o-assistant.git
+   git clone https://github.com/novsmax/SKI-O-Routes.git
    cd ski-o-assistant
    ```
 
