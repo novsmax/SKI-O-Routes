@@ -32,6 +32,27 @@ SHOW_STEPS = True
 OVERLAY_ALPHA = 0.7
 
 
+def _filter_components_by_area(mask: np.ndarray, total_area: int, max_area_ratio: float) -> np.ndarray:
+    """
+    Фильтрует связные компоненты бинарной маски по максимальному отношению площади к общей.
+
+    Параметры:
+    - mask: Бинарная маска
+    - total_area: Общая площадь изображения (ширина * высота)
+    - max_area_ratio: Максимальное допустимое отношение площади компоненты к общей площади
+
+    Возвращает:
+    - filtered_mask: Маска, содержащая только компоненты, не превышающие порог площади
+    """
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    filtered_mask = np.zeros_like(mask)
+    for i in range(1, num_labels):
+        area = stats[i, cv2.CC_STAT_AREA]
+        if area / total_area < max_area_ratio:
+            filtered_mask[labels == i] = 255
+    return filtered_mask
+
+
 def get_save_dir(image_path, base_dir="test_results"):
     """Создает директорию для сохранения результатов обработки."""
     filename = os.path.basename(image_path)
@@ -72,21 +93,8 @@ def extract_mask(image, lower_hsv, upper_hsv, max_area_ratio=0.1):
     mask = cv2.inRange(hsv, np.array(lower_hsv), np.array(upper_hsv))
 
 
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
-
-
     total_area = image.shape[0] * image.shape[1]
-
-
-    filtered_mask = np.zeros_like(mask)
-
-
-    for i in range(1, num_labels):
-        area = stats[i, cv2.CC_STAT_AREA]
-
-
-        if area / total_area < max_area_ratio:
-            filtered_mask[labels == i] = 255
+    filtered_mask = _filter_components_by_area(mask, total_area, max_area_ratio)
 
 
     kernel = np.ones((3, 3), np.uint8)
@@ -273,17 +281,8 @@ def process_map_with_dashed_lines(image_path, hsv_params, base_dir="test_results
     initial_mask = green_mask.copy()
     initial_mask[blue_mask > 0] = 0
 
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(initial_mask, connectivity=8)
-
     total_area = image.shape[0] * image.shape[1]
-
-    mask = np.zeros_like(initial_mask)
-
-    for i in range(1, num_labels):
-        area = stats[i, cv2.CC_STAT_AREA]
-
-        if area / total_area < 0.05:
-            mask[labels == i] = 255
+    mask = _filter_components_by_area(initial_mask, total_area, 0.05)
 
     solid_lines_mask = mask.copy()
 
