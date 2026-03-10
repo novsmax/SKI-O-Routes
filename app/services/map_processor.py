@@ -12,7 +12,7 @@ import base64
 from typing import Tuple, Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 
-from app.trail_analyzer import process_map_with_dashed_lines
+from app.trail_analyzer import process_map_with_dashed_lines, HSV_PARAMS
 from app.graph_builder import build_graph_from_skeleton, find_optimal_route, visualize_route, remove_disconnected_vertices
 from app.models import Map
 
@@ -47,14 +47,7 @@ class MapProcessor:
         self.skeleton = None
 
 
-        self.hsv_params = {
-            "h_min": 55,
-            "h_max": 70,
-            "s_min": 50,
-            "s_max": 255,
-            "v_min": 50,
-            "v_max": 215
-        }
+        self.hsv_params = HSV_PARAMS.copy()
 
 
         self.scale_factor = 1.0
@@ -62,6 +55,22 @@ class MapProcessor:
 
         if db and map_id:
             self._load_saved_graph()
+
+    @staticmethod
+    def _squared_distance(point_xy: Tuple[int, int], junction_yx: Tuple[int, int]) -> int:
+        """
+        Возвращает квадрат евклидова расстояния между точкой (x, y) и перекрестком (y, x).
+
+        Args:
+            point_xy: Координаты точки в формате (x, y)
+            junction_yx: Координаты перекрестка в формате (y, x)
+
+        Returns:
+            Квадрат евклидова расстояния
+        """
+        x, y = point_xy
+        jy, jx = junction_yx
+        return (jx - x) ** 2 + (jy - y) ** 2
 
     def _load_saved_graph(self) -> bool:
         """
@@ -407,15 +416,12 @@ class MapProcessor:
             return None
 
 
-        x, y = point
-
-
         min_dist = float('inf')
         nearest_junction = None
 
         for junction in self.junctions:
             jy, jx = junction
-            dist = (jx - x) ** 2 + (jy - y) ** 2
+            dist = self._squared_distance(point, junction)
 
             if dist < min_dist:
                 min_dist = dist
@@ -437,9 +443,6 @@ class MapProcessor:
             return None
 
 
-        x, y = point
-
-
         min_dist = float('inf')
         nearest_node = None
 
@@ -447,8 +450,7 @@ class MapProcessor:
             if node >= len(self.junctions):
                 continue
 
-            jy, jx = self.junctions[node]
-            dist = (jx - x) ** 2 + (jy - y) ** 2
+            dist = self._squared_distance(point, self.junctions[node])
 
             if dist < min_dist:
                 min_dist = dist

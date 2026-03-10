@@ -5,7 +5,7 @@ import networkx as nx
 import cv2
 import matplotlib.pyplot as plt
 from typing import List, Tuple, Dict, Optional, Any
-from app.trail_analyzer import process_map_with_dashed_lines
+from app.trail_analyzer import process_map_with_dashed_lines, HSV_PARAMS
 
 
 def build_graph_from_skeleton(
@@ -504,14 +504,7 @@ def process_original_map(
     """
 
     if hsv_params is None:
-        hsv_params = {
-            "h_min": 55,
-            "h_max": 70,
-            "s_min": 50,
-            "s_max": 255,
-            "v_min": 50,
-            "v_max": 215
-        }
+        hsv_params = HSV_PARAMS
 
 
     print("Шаг 1: Выделение лыжней и перекрестков...")
